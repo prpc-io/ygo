@@ -10,18 +10,18 @@ package block
 type ContentKind uint8
 
 const (
-	KindGC       ContentKind = 0
-	KindDeleted  ContentKind = 1
-	KindJSON     ContentKind = 2
-	KindBinary   ContentKind = 3
-	KindString   ContentKind = 4
-	KindEmbed    ContentKind = 5
-	KindFormat   ContentKind = 6
-	KindType     ContentKind = 7
-	KindAny      ContentKind = 8
-	KindDoc      ContentKind = 9
-	KindSkip     ContentKind = 10
-	KindMove     ContentKind = 11
+	KindGC      ContentKind = 0
+	KindDeleted ContentKind = 1
+	KindJSON    ContentKind = 2
+	KindBinary  ContentKind = 3
+	KindString  ContentKind = 4
+	KindEmbed   ContentKind = 5
+	KindFormat  ContentKind = 6
+	KindType    ContentKind = 7
+	KindAny     ContentKind = 8
+	KindDoc     ContentKind = 9
+	KindSkip    ContentKind = 10
+	KindMove    ContentKind = 11
 )
 
 // Content is the payload of an Item. A single struct (not an interface)
@@ -39,11 +39,11 @@ type Content struct {
 	// Variant-specific payloads. Set on the indicated kinds; zero
 	// elsewhere.
 
-	Anys      []Any   // KindAny, KindEmbed (1 elem), KindFormat (value, 1 elem)
+	Anys      []Any    // KindAny, KindEmbed (1 elem), KindFormat (value, 1 elem)
 	JSONStrs  []string // KindJSON (legacy stringified JSON, splittable)
-	Bytes     []byte  // KindBinary
-	Str       string  // KindString — UTF-8 input; internally normalized to UTF-16 for wire
-	FormatKey string  // KindFormat (key)
+	Bytes     []byte   // KindBinary
+	Str       string   // KindString — UTF-8 input; internally normalized to UTF-16 for wire
+	FormatKey string   // KindFormat (key)
 
 	DeletedLen uint64 // KindDeleted, KindSkip — element count only
 

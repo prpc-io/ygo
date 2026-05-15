@@ -66,6 +66,19 @@
 - **Why intentional:** lib0 varuints can carry values up to 64 bits. Yrs would error on a clock above 2^32; we accept it. This is a defensive widening, not a bug.
 - **When to revisit:** if memory profiling shows ID storage dominating allocations on large docs. Unlikely.
 
+## Process / tooling
+
+### gofmt not enforced before commit
+
+- **Where:** developer workflow.
+- **What:** CI's `golangci-lint` job rejected commit `5d68d3c` because two files (`internal/block/content.go` const block, `internal/store/client_blocks_test.go` slice literal alignment) had inconsistent spacing that gofmt normalizes. The mistake escaped because we ran `go vet` and `go test` locally but not `gofmt -l`.
+- **Why deferred:** quick correction (`gofmt -w .`) was cheaper than blocking on a tooling change. The underlying gap remains.
+- **When to address:** before the second time this happens. Concrete options, ordered by leverage:
+  1. Add a `Makefile` target `make check` that runs `gofmt -l . && go vet ./... && go test ./... -race && golangci-lint run`. Mention in CONTRIBUTING.md as the pre-push contract.
+  2. Add a `.git/hooks/pre-commit` template under `tools/git-hooks/` and a one-line install instruction in CONTRIBUTING.md (developer opt-in; not enforced).
+  3. Add a `pre-push` hook installer that runs `make check` automatically.
+  Recommendation: start with option 1 (zero-magic, discoverable). Option 3 is the long-term answer once we have collaborators.
+
 ## Open questions captured but not resolved
 
 The following are flagged in `docs/yrs-port-notes/block.md` § "Open questions" — re-read at the time the relevant code is touched:

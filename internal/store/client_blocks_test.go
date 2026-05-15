@@ -54,7 +54,7 @@ func TestClientBlockList_FindPivot_SingleAtZero(t *testing.T) {
 
 func TestClientBlockList_FindPivot_Multi(t *testing.T) {
 	l := NewClientBlockList()
-	l.Push(CellOfItem(makeItem(1, 0, 5)))   // covers 0..4
+	l.Push(CellOfItem(makeItem(1, 0, 5)))    // covers 0..4
 	l.Push(CellOfGC(5, 9))                   // covers 5..9
 	l.Push(CellOfItem(makeItem(1, 10, 100))) // covers 10..109
 
@@ -100,7 +100,7 @@ func TestClientBlockList_PushMonotonic(t *testing.T) {
 
 func TestClientBlockList_CheckInvariants_DetectsGap(t *testing.T) {
 	l := NewClientBlockList()
-	l.Push(CellOfItem(makeItem(1, 0, 5)))   // 0..4
+	l.Push(CellOfItem(makeItem(1, 0, 5)))  // 0..4
 	l.Push(CellOfItem(makeItem(1, 10, 5))) // 10..14 — gap at 5..9!
 	if err := l.CheckInvariants(); err == nil {
 		t.Error("CheckInvariants must detect the gap between 4 and 10")
@@ -118,7 +118,7 @@ func TestClientBlockList_CheckInvariants_DetectsOverlap(t *testing.T) {
 
 func TestClientBlockList_Insert(t *testing.T) {
 	l := NewClientBlockList()
-	l.Push(CellOfItem(makeItem(1, 0, 5)))   // 0..4
+	l.Push(CellOfItem(makeItem(1, 0, 5)))  // 0..4
 	l.Push(CellOfItem(makeItem(1, 10, 5))) // 10..14
 
 	// Insert a fill cell at index 1 to bridge the gap.
