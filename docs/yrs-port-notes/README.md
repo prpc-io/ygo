@@ -25,7 +25,7 @@ Per-layer working notes generated incrementally as each layer of the Rust [`yrs`
 | Map shared type | `yrs/src/types/map.rs` | [`types-map.md`](types-map.md) | done; shipped as `internal/types/` |
 | Array shared type | `yrs/src/types/array.rs` | `types-array.md` | not yet written |
 | Text shared type | `yrs/src/types/text.rs` | `types-text.md` | not yet written |
-| Update encoding (V1) | `yrs/src/update.rs`, encoder/decoder | [`update-v1.md`](update-v1.md) | done end-to-end in pure Go; cross-language JS-Yjs fixture pending (Phase B3) |
+| Update encoding (V1) | `yrs/src/update.rs`, encoder/decoder | [`update-v1.md`](update-v1.md) | done; JS Yjs → Go direction proven by 8 fixture scenarios; Go → JS reverse direction tracked in tech-debt |
 | y-sync protocol | `yrs/src/sync/protocol.rs` | `protocol-sync.md` | not yet written |
 | Awareness | `yrs/src/sync/awareness.rs` | `protocol-awareness.md` | not yet written |
 

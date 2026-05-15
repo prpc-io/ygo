@@ -60,10 +60,15 @@ jobs:
       - name: install yjs and lib0
         working-directory: testdata/gen
         run: npm install
-      - name: regenerate fixtures
+      - name: regenerate lib0 fixtures
         working-directory: testdata/gen
         run: node gen-lib0.mjs
+      - name: regenerate yjs-update fixtures
+        working-directory: testdata/gen
+        run: node gen-yjs-update.mjs
       - name: verify no diff
         run: git diff --exit-code testdata/
       - name: run go tests against fixtures
-        run: go test ./internal/lib0/... -run TestFixtures
+        run: |
+          go test ./internal/lib0/... -run TestFixtures
+          go test ./internal/encoding/... -run TestFixtures

@@ -1,0 +1,82 @@
+{
+  "generator": "yjs@13.6.20",
+  "scenarios": [
+    {
+      "description": "empty doc, no ops",
+      "js_client_id": 2207255468,
+      "root_name": "x",
+      "update_hex": "0000",
+      "expected_map": {}
+    },
+    {
+      "description": "single Map.set string",
+      "js_client_id": 67769030,
+      "root_name": "settings",
+      "update_hex": "0101c6a5a8200028010873657474696e677305636f6c6f7201770372656400",
+      "expected_map": {
+        "color": "red"
+      }
+    },
+    {
+      "description": "two Map.set on different keys",
+      "js_client_id": 903378106,
+      "root_name": "settings",
+      "update_hex": "0102bae9e1ae030028010873657474696e677305636f6c6f7201770372656428010873657474696e6773046c616e67017702676f00",
+      "expected_map": {
+        "color": "red",
+        "lang": "go"
+      }
+    },
+    {
+      "description": "Map.set across multiple value types",
+      "js_client_id": 3271835733,
+      "root_name": "x",
+      "update_hex": "0106d58091980c0028010178017301770568656c6c6f280101780169017d2a280101780166017b40091eb851eb851f2801017806625f7472756501782801017807625f66616c7365017928010178076e756c6c76616c017e00",
+      "expected_map": {
+        "s": "hello",
+        "i": 42,
+        "f": 3.14,
+        "b_true": true,
+        "b_false": false,
+        "nullval": null
+      }
+    },
+    {
+      "description": "Map.set + Map.set same key (LWW)",
+      "js_client_id": 113200214,
+      "root_name": "x",
+      "update_hex": "0102d698fd350021010178016b02a8d698fd3501017705746869726401d698fd35010002",
+      "expected_map": {
+        "k": "third"
+      }
+    },
+    {
+      "description": "Map.set + Map.delete",
+      "js_client_id": 3626352143,
+      "root_name": "x",
+      "update_hex": "01028ffc96c10d002101017801610128010178016201770462657461018ffc96c10d010001",
+      "expected_map": {
+        "b": "beta"
+      }
+    },
+    {
+      "description": "Map.set then delete then set again",
+      "js_client_id": 2902488536,
+      "root_name": "x",
+      "update_hex": "0102d8eb81e80a0021010178016b01a8d8eb81e80a00017702763201d8eb81e80a010001",
+      "expected_map": {
+        "k": "v2"
+      }
+    },
+    {
+      "description": "Map with unicode keys and values",
+      "js_client_id": 131702014,
+      "root_name": "x",
+      "update_hex": "0102feb9e63e002801017808d0bad0bbd18ed187017710d0b7d0bdd0b0d187d0b5d0bdd0b8d0b52801017805656d6f6a690177026f6b00",
+      "expected_map": {
+        "ключ": "значение",
+        "emoji": "ok"
+      }
+    }
+  ]
+}

@@ -129,12 +129,18 @@
 - **What:** EncodeContent panics on these kinds; DecodeContent returns "unsupported content kind". Map.Get's `extractValue` already handles the read side (returns nil for unknown kinds), so wire-decoded items of these kinds would integrate but be invisible to Map readers.
 - **When to address:** Embed with JS Y.Map embedding objects; Format with Y.Text rich-text; Type with nested shared types (Array/Map/Text inside another); Doc with subdocs; Move with Y.Array.move(); JSON is legacy (yrs supports decode, encode is rare).
 
-### Cross-language fixture against JS Yjs (Phase B3)
+### Cross-language JS Yjs → Go direction (resolved)
 
-- **Where:** missing `testdata/gen/gen-yjs-update.mjs` and corresponding Go fixture test.
-- **What:** today's Update tests are pure Go (Doc.A → encode → Doc.B → decode + apply → state matches). The actual binary-protocol-compat proof requires JS Yjs encoding bytes that Go decodes + applies (and vice versa).
-- **Why deferred to Phase B3:** the Phase B port pipeline is complete; cross-language fixtures are now testable end-to-end. Splitting them into a separate commit keeps the fixture wiring (Node script + Go fixture loader) reviewable independently of the encoder/decoder/apply implementation.
-- **When to address:** next commit. This is the milestone-of-the-milestones — proves the prime directive.
+- **Was:** missing `testdata/gen/gen-yjs-update.mjs` + Go fixture test.
+- **Resolved by:** Phase B3 fixture wiring. `testdata/yjs-updates.json` captures 8 scenarios (empty doc, single set, multi-key set, all primitive value types, LWW chain, set+delete, set→delete→set, unicode keys/values). `internal/encoding/fixture_test.go::TestFixtures_DecodeApplyJSYjsUpdates` decodes each via DecodeUpdate, applies to a fresh Doc via Update.Apply, and verifies the resulting Map state matches the expected JSON. All 8 pass under `-race`. CI workflow's `fixtures` job regenerates and runs both lib0 and yjs-update tests on every push.
+- **What this proves:** bytes that JS Yjs (yjs@13.6.20) produces via `Y.encodeStateAsUpdate(doc)` are byte-equivalent to what our DecodeUpdate accepts as input. The half of binary-protocol-compat that matters most for adoption — being able to receive updates from existing JS Yjs deployments — is verified end-to-end.
+
+### Cross-language Go → JS Yjs direction not yet tested
+
+- **Where:** missing `testdata/gen/verify-go-bytes.mjs` + Go test that exec's Node.
+- **What:** the reverse direction (Go encodes → JS decodes via `Y.applyUpdate(doc, bytes)`) is not yet tested. JS Yjs's decoder is more permissive than yrs's (it accepts a wider range of valid encodings), so Go-encoded bytes that round-trip in pure Go may still fail to apply on the JS side if our wire format diverges in any subtle way.
+- **Why deferred:** requires Go test runner to exec a Node subprocess, pipe bytes via stdin/stdout or temp files, and parse JSON results. Not hard, but enough infrastructure that splitting from direction-one keeps each commit reviewable.
+- **When to address:** the next-likely real-world failure mode is a Hocuspocus-compat server scenario where JS clients download Go-encoded snapshots. Address before that lands.
 
 ### Surrogate-pair split returns invalid UTF-16
 
