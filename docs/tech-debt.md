@@ -142,16 +142,20 @@
 
 ## Process / tooling
 
-### gofmt not enforced before commit
+### gofmt and golangci-lint not enforced before commit
 
 - **Where:** developer workflow.
-- **What:** CI's `golangci-lint` job rejected commit `5d68d3c` because two files (`internal/block/content.go` const block, `internal/store/client_blocks_test.go` slice literal alignment) had inconsistent spacing that gofmt normalizes. The mistake escaped because we ran `go vet` and `go test` locally but not `gofmt -l`.
-- **Why deferred:** quick correction (`gofmt -w .`) was cheaper than blocking on a tooling change. The underlying gap remains.
-- **When to address:** before the second time this happens. Concrete options, ordered by leverage:
-  1. Add a `Makefile` target `make check` that runs `gofmt -l . && go vet ./... && go test ./... -race && golangci-lint run`. Mention in CONTRIBUTING.md as the pre-push contract.
-  2. Add a `.git/hooks/pre-commit` template under `tools/git-hooks/` and a one-line install instruction in CONTRIBUTING.md (developer opt-in; not enforced).
-  3. Add a `pre-push` hook installer that runs `make check` automatically.
-  Recommendation: start with option 1 (zero-magic, discoverable). Option 3 is the long-term answer once we have collaborators.
+- **What:** CI rejects keep happening because local pre-push contract is "I ran `go vet` and tests, looks good." Two repeat incidents:
+  1. Commit `5d68d3c` — gofmt rejected two files (const-block spacing, slice-literal alignment). Fixed in `9375b37`.
+  2. Commits `085269d`, `58360cf`, `b1b117f` — golangci-lint's `unused` checker flagged four dead symbols (`(*Doc).blockStore` method, `mergeBlocks`/`deletedIDs`/`changedTypes` fields). The fields were write-only; `unused` flags those as "value never read." Fixed in `52d92a4` by removing the dead method and adding `DeletedIDs()` / `ChangedTypes()` accessors.
+- **Local-CI version drift:** brew's `golangci-lint` is v2.12.2; CI workflow installs v1.64.8 (config files have different syntax). Running locally needs `go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8` to match — not as convenient as `brew install`.
+- **Why deferred:** quick corrections cost a small commit each; the underlying gap is process-shape, not project-shape.
+- **When to address:** before the third repeat. Concrete options, ordered by leverage:
+  1. **Pin CI lint version explicitly** (`version: v1.64.8` instead of `latest` in `.github/workflows/test.yml`) so CI behaviour is reproducible and a `go install ...@v1.64.8` matches.
+  2. **Add a `Makefile` target `make check`** that runs `gofmt -l . && go vet ./... && go test ./... -race && golangci-lint run`. Mention in CONTRIBUTING.md as the pre-push contract.
+  3. **`.git/hooks/pre-commit` template** under `tools/git-hooks/` with a one-line install instruction. Developer opt-in; not enforced.
+  4. **Pre-push hook installer** that runs `make check` automatically.
+  Start with options 1+2. Option 4 once collaborators arrive.
 
 ## Open questions captured but not resolved
 
