@@ -85,11 +85,6 @@ func (d *Doc) ClientID() uint64 { return d.clientID }
 // items will run at transaction commit.
 func (d *Doc) GC() bool { return d.gc }
 
-// store accessor used internally by Transaction methods. Unexported
-// so external packages route through Transaction (which holds the
-// appropriate lock).
-func (d *Doc) blockStore() *store.BlockStore { return d.store }
-
 // newClientID returns a random non-zero uint64 in [1, MaxClientID].
 // Uses crypto/rand for collision resistance across replicas. Retry
 // loop handles the (probability 2^-53) case where the masked draw is

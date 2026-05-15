@@ -67,22 +67,23 @@ type TransactionMut struct {
 	// from updates applied via ApplyUpdate.
 	Origin any
 
-	// mergeBlocks accumulates IDs of items that should be considered
-	// for try_squash with their left neighbour at Commit time.
-	// Populated by Item.Integrate as items land; consumed by squash
-	// in Commit. Currently unused (no Integrate, no squash).
-	mergeBlocks []block.ID
-
-	// deletedIDs records items tombstoned during this transaction.
-	// Used to build the DeleteSet emitted with the update event,
-	// and to drive squash of adjacent deleted runs.
-	// Currently unused (no DeleteSet, no update emit).
+	// deletedIDs records items tombstoned during this transaction
+	// via Delete. Used at Commit time (not yet) to build the wire
+	// DeleteSet and drive squash of adjacent deleted runs. Read by
+	// DeletedIDs accessor for tests and future observer dispatch.
 	deletedIDs []block.ID
 
 	// changedTypes records branches whose user-observable state
-	// changed during this transaction. Drives observer dispatch at
-	// Commit. Currently unused (no observers, Branch is a stub).
+	// changed during this transaction via AddChangedType. Drives
+	// observer dispatch at Commit (not yet implemented). Read by
+	// ChangedTypes accessor.
 	changedTypes map[*block.Branch]struct{}
+
+	// mergeBlocks would accumulate item IDs that should be
+	// considered for try_squash at Commit. Will be added back when
+	// Item.Integrate gains a MarkForMerge call site and Commit
+	// gains a squash pass; both deferred (see tech-debt.md).
+	// Field intentionally absent for now to keep the type lint-clean.
 }
 
 // WriteTxn acquires the doc's write lock and returns a TransactionMut.
@@ -202,6 +203,22 @@ func (t *TransactionMut) AddChangedType(parent *block.Branch, parentSub *string)
 	}
 	t.changedTypes[parent] = struct{}{}
 	_ = parentSub // intentionally dropped until observer subsystem lands
+}
+
+// DeletedIDs returns the IDs of items tombstoned during this
+// transaction so far. Returned slice aliases internal state; do not
+// mutate. Primarily for tests and the future delete-set emitter.
+func (t *TransactionMut) DeletedIDs() []block.ID { return t.deletedIDs }
+
+// ChangedTypes returns the branches with recorded changes in this
+// transaction. Order is non-deterministic (map iteration). Primarily
+// for tests and the future observer dispatcher.
+func (t *TransactionMut) ChangedTypes() []*block.Branch {
+	out := make([]*block.Branch, 0, len(t.changedTypes))
+	for b := range t.changedTypes {
+		out = append(out, b)
+	}
+	return out
 }
 
 // Compile-time check that TransactionMut satisfies the
