@@ -1,0 +1,245 @@
+{
+  "generator": "lib0@0.2.93",
+  "cases": [
+    {
+      "kind": "varuint",
+      "name": "zero",
+      "valueU64": 0,
+      "bytesHex": "00"
+    },
+    {
+      "kind": "varuint",
+      "name": "one",
+      "valueU64": 1,
+      "bytesHex": "01"
+    },
+    {
+      "kind": "varuint",
+      "name": "max1byte",
+      "valueU64": 127,
+      "bytesHex": "7f"
+    },
+    {
+      "kind": "varuint",
+      "name": "min2byte",
+      "valueU64": 128,
+      "bytesHex": "8001"
+    },
+    {
+      "kind": "varuint",
+      "name": "byte255",
+      "valueU64": 255,
+      "bytesHex": "ff01"
+    },
+    {
+      "kind": "varuint",
+      "name": "max2byte",
+      "valueU64": 16383,
+      "bytesHex": "ff7f"
+    },
+    {
+      "kind": "varuint",
+      "name": "min3byte",
+      "valueU64": 16384,
+      "bytesHex": "808001"
+    },
+    {
+      "kind": "varuint",
+      "name": "maxUint32",
+      "valueU64": 4294967295,
+      "bytesHex": "ffffffff0f"
+    },
+    {
+      "kind": "varuint",
+      "name": "maxUint53",
+      "valueU64": 9007199254740991,
+      "bytesHex": "ffffffffffffff0f"
+    },
+    {
+      "kind": "varint",
+      "name": "zero",
+      "valueI64": 0,
+      "bytesHex": "00"
+    },
+    {
+      "kind": "varint",
+      "name": "one",
+      "valueI64": 1,
+      "bytesHex": "01"
+    },
+    {
+      "kind": "varint",
+      "name": "minusOne",
+      "valueI64": -1,
+      "bytesHex": "41"
+    },
+    {
+      "kind": "varint",
+      "name": "pos63",
+      "valueI64": 63,
+      "bytesHex": "3f"
+    },
+    {
+      "kind": "varint",
+      "name": "neg63",
+      "valueI64": -63,
+      "bytesHex": "7f"
+    },
+    {
+      "kind": "varint",
+      "name": "pos64",
+      "valueI64": 64,
+      "bytesHex": "8001"
+    },
+    {
+      "kind": "varint",
+      "name": "neg64",
+      "valueI64": -64,
+      "bytesHex": "c001"
+    },
+    {
+      "kind": "varint",
+      "name": "pos8191",
+      "valueI64": 8191,
+      "bytesHex": "bf7f"
+    },
+    {
+      "kind": "varint",
+      "name": "neg8191",
+      "valueI64": -8191,
+      "bytesHex": "ff7f"
+    },
+    {
+      "kind": "varint",
+      "name": "pos8192",
+      "valueI64": 8192,
+      "bytesHex": "808001"
+    },
+    {
+      "kind": "varint",
+      "name": "neg8192",
+      "valueI64": -8192,
+      "bytesHex": "c08001"
+    },
+    {
+      "kind": "varint",
+      "name": "maxInt32",
+      "valueI64": 2147483647,
+      "bytesHex": "bfffffff0f"
+    },
+    {
+      "kind": "varint",
+      "name": "minInt32",
+      "valueI64": -2147483648,
+      "bytesHex": "c080808010"
+    },
+    {
+      "kind": "varstring",
+      "name": "empty",
+      "valueStr": "",
+      "bytesHex": "00"
+    },
+    {
+      "kind": "varstring",
+      "name": "a",
+      "valueStr": "a",
+      "bytesHex": "0161"
+    },
+    {
+      "kind": "varstring",
+      "name": "hello",
+      "valueStr": "hello",
+      "bytesHex": "0568656c6c6f"
+    },
+    {
+      "kind": "varstring",
+      "name": "unicode",
+      "valueStr": "привет",
+      "bytesHex": "0cd0bfd180d0b8d0b2d0b5d182"
+    },
+    {
+      "kind": "varstring",
+      "name": "emoji",
+      "valueStr": "👋🌍",
+      "bytesHex": "08f09f918bf09f8c8d"
+    },
+    {
+      "kind": "varbuffer",
+      "name": "empty",
+      "valueBufHex": "",
+      "bytesHex": "00"
+    },
+    {
+      "kind": "varbuffer",
+      "name": "singleByte",
+      "valueBufHex": "01",
+      "bytesHex": "0101"
+    },
+    {
+      "kind": "varbuffer",
+      "name": "small",
+      "valueBufHex": "00010203ff",
+      "bytesHex": "0500010203ff"
+    },
+    {
+      "kind": "varbuffer",
+      "name": "kilobyte",
+      "valueBufHex": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+      "bytesHex": "8008abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+    },
+    {
+      "kind": "float32",
+      "name": "zero",
+      "valueF32": "0",
+      "bytesHex": "00000000"
+    },
+    {
+      "kind": "float32",
+      "name": "one",
+      "valueF32": "1",
+      "bytesHex": "3f800000"
+    },
+    {
+      "kind": "float32",
+      "name": "minusOne",
+      "valueF32": "-1",
+      "bytesHex": "bf800000"
+    },
+    {
+      "kind": "float32",
+      "name": "pi",
+      "valueF32": "3.1415927410125732",
+      "bytesHex": "40490fdb"
+    },
+    {
+      "kind": "float64",
+      "name": "zero",
+      "valueF64": "0",
+      "bytesHex": "0000000000000000"
+    },
+    {
+      "kind": "float64",
+      "name": "one",
+      "valueF64": "1",
+      "bytesHex": "3ff0000000000000"
+    },
+    {
+      "kind": "float64",
+      "name": "minusOne",
+      "valueF64": "-1",
+      "bytesHex": "bff0000000000000"
+    },
+    {
+      "kind": "float64",
+      "name": "pi",
+      "valueF64": "3.141592653589793",
+      "bytesHex": "400921fb54442d18"
+    },
+    {
+      "kind": "float64",
+      "name": "maxValue",
+      "valueF64": "1.7976931348623157e+308",
+      "bytesHex": "7fefffffffffffff"
+    }
+  ]
+}
