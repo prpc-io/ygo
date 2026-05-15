@@ -1,0 +1,121 @@
+package doc
+
+import (
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/Deln0r/ygo/internal/block"
+)
+
+func TestReadTxn_BasicLifecycle(t *testing.T) {
+	d := NewDoc()
+	txn := d.ReadTxn()
+
+	if txn.Doc() != d {
+		t.Error("Doc() should return the originating Doc")
+	}
+	if txn.Store() != d.store {
+		t.Error("Store() should return the doc's BlockStore")
+	}
+
+	txn.Close()
+	// Idempotent
+	txn.Close()
+}
+
+func TestWriteTxn_BasicLifecycle(t *testing.T) {
+	d := NewDoc()
+	txn := d.WriteTxn()
+
+	if txn.Doc() != d {
+		t.Error("Doc() should return the originating Doc")
+	}
+	if txn.Store() != d.store {
+		t.Error("Store() should return the doc's BlockStore")
+	}
+	txn.Origin = "test-origin"
+	if got := txn.Origin; got != "test-origin" {
+		t.Errorf("Origin not preserved: got %v", got)
+	}
+
+	txn.Commit()
+	// Idempotent
+	txn.Commit()
+}
+
+func TestWriteTxn_BlocksConcurrentReadTxn(t *testing.T) {
+	d := NewDoc()
+	w := d.WriteTxn()
+	defer w.Commit()
+
+	var entered atomic.Bool
+	done := make(chan struct{})
+	go func() {
+		r := d.ReadTxn()
+		entered.Store(true)
+		r.Close()
+		close(done)
+	}()
+
+	// Give the goroutine a chance to attempt the lock.
+	time.Sleep(50 * time.Millisecond)
+	if entered.Load() {
+		t.Fatal("ReadTxn entered while WriteTxn was still open")
+	}
+
+	w.Commit() // Release the lock; goroutine should proceed.
+	select {
+	case <-done:
+		// Expected.
+	case <-time.After(time.Second):
+		t.Fatal("ReadTxn did not proceed after WriteTxn.Commit")
+	}
+	if !entered.Load() {
+		t.Error("ReadTxn never entered (timeout in select?)")
+	}
+}
+
+func TestReadTxn_AllowsConcurrentReadTxn(t *testing.T) {
+	d := NewDoc()
+	r1 := d.ReadTxn()
+	defer r1.Close()
+
+	done := make(chan struct{})
+	go func() {
+		r2 := d.ReadTxn()
+		r2.Close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Expected: two read txns coexist.
+	case <-time.After(time.Second):
+		t.Fatal("Concurrent ReadTxn was blocked; sync.RWMutex semantics broken")
+	}
+}
+
+func TestWriteTxn_StoreMutationVisibleToReadTxn(t *testing.T) {
+	d := NewDoc()
+
+	// Push a block under the write lock.
+	w := d.WriteTxn()
+	w.Store().PushBlock(&block.Item{
+		ID:      block.ID{Client: d.ClientID(), Clock: 0},
+		Len:     5,
+		Content: block.Content{Kind: block.KindString, Str: "hello"},
+	})
+	w.Commit()
+
+	// Read from a fresh ReadTxn after release.
+	r := d.ReadTxn()
+	defer r.Close()
+	it := r.Store().GetItem(block.ID{Client: d.ClientID(), Clock: 0})
+	if it == nil {
+		t.Fatal("Block pushed inside WriteTxn not visible in subsequent ReadTxn")
+	}
+	if it.Content.Str != "hello" {
+		t.Errorf("Content.Str=%q want %q", it.Content.Str, "hello")
+	}
+}

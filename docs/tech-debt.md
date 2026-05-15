@@ -54,10 +54,46 @@
 
 ### Forward-dependency stubs are empty types
 
-- **Where:** `internal/block/stubs.go` (`Branch`, `Move`, `Doc`).
-- **What:** placeholder `type X struct{}` definitions so the block package compiles.
+- **Where:** `internal/block/stubs.go` (`Branch`, `Move`).
+- **What:** placeholder `type X struct{}` definitions so the block package compiles. (`Doc` was previously here; now lives in `internal/doc`. The block-layer `Doc` stub is now only referenced by `block.Content.Doc` / `block.Content.ParentDoc` for `KindDoc` payloads, which is read-only data the block layer never inspects.)
 - **Why deferred:** by design — the block layer references these only through pointers and never inspects their internals. Real definitions land with their owning layers.
-- **When to address:** `Branch` with the types layer; `Doc` with the doc layer; `Move` post-MVP per ROADMAP.
+- **When to address:** `Branch` with the types layer; `Move` post-MVP per ROADMAP. The `block.Doc` stub stays even after `internal/doc.Doc` lands, because the block layer can't depend on the doc layer (would cycle); we'll bridge them through an interface when sub-document support arrives.
+
+## Doc / Transaction layer
+
+### TransactionMut.Commit lifecycle is a stub
+
+- **Where:** `internal/doc/transaction.go` `(*TransactionMut).Commit`.
+- **What:** yrs runs an 11-step commit lifecycle (squash mergeBlocks, GC eligible deleted, fire pre-emit observers, emit V1 update event, emit subdoc events, fire after-commit observers, etc. — see `docs/yrs-port-notes/transaction.md` § "Commit lifecycle"). We currently only release the write lock and mark the txn closed.
+- **Why deferred:** every step depends on a layer that does not yet exist (squash needs `Item.TrySquash` + `ClientBlockList.SquashLeft`; GC needs `gc.go`; observers need an observer subsystem; update emit needs the V1 encoder; subdocs need subdoc support).
+- **Impact today:** `mergeBlocks`, `deletedIDs`, `changedTypes` accumulate across the transaction but are dropped at Commit. Memory leak per transaction; no observer notifications; updates not emitted. None of this matters until callers exist.
+- **When to address:** unblock each step as the underlying layer lands. Squash first (right after Item.Integrate, since squash is what consumes mergeBlocks). Update emission second (with V1 encoder). Observers third. GC and subdocs last.
+
+### Transaction lifetime not enforced
+
+- **Where:** `internal/doc/transaction.go` `Transaction`, `TransactionMut`.
+- **What:** yrs uses a `'doc` lifetime parameter on `Transaction<'doc>` so the borrow checker rejects code that retains a transaction past the doc's lifetime or past the explicit drop. Go has no equivalent. A caller can capture the `*Transaction` returned by `Doc.ReadTxn()` in an outer variable and use it after `Close()`, dereferencing a doc whose lock is no longer held.
+- **Why deferred:** runtime checks (e.g. `t.closed` panic on every method) add overhead and noise. The contract is documented in the type doc; mature OSS Go projects (`database/sql.Tx`, `bbolt.Tx`) take the same documentation-only approach.
+- **When to address:** if a real bug surfaces that's traceable to retained-after-close. Add a `valid bool` plus panic-on-stale-access; the cost is one branch per method.
+
+### Origin observer dispatch not wired
+
+- **Where:** `internal/doc/transaction.go` `TransactionMut.Origin`.
+- **What:** yrs's transactions carry an `Origin` opaque value that observers see in events, used to e.g. tell local edits apart from remote-applied updates (`transaction.rs:1210-1288`). We expose the field but do not yet have an observer subsystem to thread it through.
+- **When to address:** with the observer subsystem (paired with the V1 update emit step in the commit lifecycle).
+
+### Subdoc tracking not implemented
+
+- **Where:** `internal/doc/transaction.go` (no `subdocs` field).
+- **What:** yrs accumulates `subdocs.added / loaded / removed` sets on TransactionMut and emits `SubdocEvent` at commit. We have no subdoc support at all yet.
+- **When to address:** post-MVP; subdocs are an advanced feature, not required for v0.1 scope per DESIGN.md.
+
+### Doc options surface is minimal
+
+- **Where:** `internal/doc/doc.go` `Options`.
+- **What:** yrs's `Options` carries auto-load, should-load, GUID, encoder version, collection-id, and other fields. We carry only `DisableGC` and a deterministic `ClientID` override.
+- **Why deferred:** none of the other yrs options are reachable from any code path we have ported. Adding them now would be premature surface.
+- **When to address:** when porting Doc.load (subdocs) for `AutoLoad`, when porting V2 encoding for `EncoderVersion`, etc. — option-by-option, only when something in the codebase consumes the value.
 
 ### ID and Item width: uint64 vs yrs u32
 
