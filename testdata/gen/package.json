@@ -1,0 +1,17 @@
+{
+  "name": "ygo-fixture-gen",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Generates lib0 and yjs fixtures consumed by ygo Go tests.",
+  "scripts": {
+    "gen": "node gen-lib0.mjs"
+  },
+  "dependencies": {
+    "lib0": "0.2.93",
+    "yjs": "13.6.20"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
