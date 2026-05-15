@@ -205,6 +205,22 @@ func (t *TransactionMut) AddChangedType(parent *block.Branch, parentSub *string)
 	_ = parentSub // intentionally dropped until observer subsystem lands
 }
 
+// GetOrCreateBranch returns the root branch with the given name from
+// the doc's root-branch registry. Used by block.Repair to resolve
+// ParentNamed references arriving from wire updates.
+//
+// We do not call Doc.Branch here because Doc.Branch acquires the
+// write lock, which we already hold inside this transaction. Touch
+// the registry directly under the existing lock instead.
+func (t *TransactionMut) GetOrCreateBranch(name string) *block.Branch {
+	if b, ok := t.doc.rootBranches[name]; ok {
+		return b
+	}
+	b := &block.Branch{Name: name, Map: map[string]*block.Item{}}
+	t.doc.rootBranches[name] = b
+	return b
+}
+
 // DeletedIDs returns the IDs of items tombstoned during this
 // transaction so far. Returned slice aliases internal state; do not
 // mutate. Primarily for tests and the future delete-set emitter.

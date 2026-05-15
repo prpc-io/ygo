@@ -88,12 +88,53 @@
 - **Why this is a real gap, not a paranoia:** per `update-v1.md` gotcha 1, sort direction asymmetry is the easiest place to silently produce bytes JS Yjs rejects. Our determinism choice (sort ascending) matches yrs's BTreeMap iteration for IdSet but differs from JS Yjs's HashMap insertion order for StateVector. Decoding either way works (varuint-pair list is order-independent on read); encoding direction matters only for byte-equality, which is what fixtures would catch.
 - **When to address:** with the Update encode/decode commit. Once Update bytes round-trip against JS Yjs, SV and IdSet are exercised end-to-end through real wire updates and the gap closes naturally.
 
-### Update encode and decode not implemented
+### Update encode / decode partial — full client list, no slicing at SV boundary
 
-- **Where:** missing files in `internal/encoding/`.
-- **What:** the V1 Update wire format (per-client block runs + embedded IdSet) is the actual user-visible payload that JS Yjs and Go ygo exchange. Without it there is no cross-language sync.
-- **Status:** scoped for the next commit (Phase B). Port note already shipped at `docs/yrs-port-notes/update-v1.md` covering encode + decode + the integrate-flow at the update level.
-- **Pre-conditions:** Item.Repair pass (parent fixup) must land before Update.decode → integrate works for items with Origin / RightOrigin pointing at not-yet-resolved IDs. Currently in tech-debt above.
+- **Where:** `internal/encoding/update.go` `EncodeDiff`.
+- **What:** the V1 Update wire format and Apply pipeline now work end-to-end in pure Go (encode → decode → apply produces converged Map state, verified by TestUpdate_TwoDocConvergence_*). What's still simplified vs yrs:
+  - **No SV-boundary slicing on the first block of each client run.** yrs's `Store::write_blocks_from` calls `find_pivot(remoteClock)` then trims the first block via `ItemSlice::encode` with a partial start. We emit the entire client list. Wire is still valid; receivers integrate items they already have as no-ops (Contains check). Cost: redundant bytes proportional to remote-known prefix length.
+  - **No partial-block origin override.** Per `update-v1.md` gotcha 4, sliced items must synthesize Origin = `(client, clock+start-1)`. Without slicing we don't trigger this; the gotcha returns when EncodeDiff gains slice-trim.
+- **When to address:** when network-bandwidth-driven sync becomes a real cost (multi-MB docs over slow links). Pure-correctness test pipeline already passes.
+
+### Item.Repair partial — ParentID not implemented
+
+- **Where:** `internal/block/repair.go`.
+- **What:** Repair handles ParentBranch (pass-through), ParentNamed (resolves via ctx.GetOrCreateBranch), ParentUnknown (inherits from neighbour). ParentID (nested type by item ID) returns `ErrParentIDUnresolved`.
+- **Why deferred:** ParentID arrives only with nested shared types (a Map inside an Array, etc.). We have only root-level Map; no nested-type construction yet.
+- **When to address:** with the nested-type construction path in the types layer.
+
+### Pending update buffer not implemented
+
+- **Where:** missing `store.pending` / `store.pending_ds` equivalent.
+- **What:** when an incoming Update item references an Origin / RightOrigin / Parent ID the local store doesn't yet have, yrs queues the item onto a per-doc pending buffer and retries after each subsequent update. Our `Update.Apply` returns `ErrMissingDependency` and stops.
+- **Impact today:** pure two-doc round-trip (one full state encode → one decode + apply) always works because the source has all dependencies. Real network sync where updates arrive interleaved or out-of-order will fail.
+- **When to address:** when network sync (Hocuspocus-compat server) lands. Requires `Store.pending` field, retry trigger in `TransactionMut.Commit` lifecycle, and `missing` StateVector tracking per pending update.
+
+### Any TLV missing arrays / objects / buffers / bigint / float32
+
+- **Where:** `internal/encoding/any_codec.go`.
+- **What:** `EncodeAny` and `DecodeAny` cover null/undefined, bool, string, int (≤ 31 bits), int64-or-larger-as-float64, float64. Tags 116 (binary), 117 (array), 118 (object), 122 (bigint), 124 (float32) are unsupported — DecodeAny returns `ErrUnsupportedAnyTag`; EncodeAny panics for the corresponding Go types.
+- **Impact today:** Map.Set with primitive values round-trips. Map.Set with `[]any` arrays, `map[string]any` objects, or `[]byte` (use ContentBinary for binary instead) does not.
+- **When to address:** with the Array shared type (which forces full Any coverage end-to-end), or when a real adopter hits the limitation.
+
+### Update.Apply does not handle Skip blocks
+
+- **Where:** `internal/encoding/update.go` `Update.Apply`.
+- **What:** Skip wire records (BLOCK_SKIP_REF_NUMBER = 10) reserve clock space without semantics; yrs uses them in V2 mostly. We decode them but Apply silently drops them. Re-encoding from the resulting store will not emit the same Skip ranges.
+- **When to address:** if V2 encoding lands or if a wire trace shows JS Yjs emitting Skip in V1 (rare).
+
+### Content encoding for Embed / Format / Type / Doc / Move / JSON not implemented
+
+- **Where:** `internal/encoding/content_codec.go`.
+- **What:** EncodeContent panics on these kinds; DecodeContent returns "unsupported content kind". Map.Get's `extractValue` already handles the read side (returns nil for unknown kinds), so wire-decoded items of these kinds would integrate but be invisible to Map readers.
+- **When to address:** Embed with JS Y.Map embedding objects; Format with Y.Text rich-text; Type with nested shared types (Array/Map/Text inside another); Doc with subdocs; Move with Y.Array.move(); JSON is legacy (yrs supports decode, encode is rare).
+
+### Cross-language fixture against JS Yjs (Phase B3)
+
+- **Where:** missing `testdata/gen/gen-yjs-update.mjs` and corresponding Go fixture test.
+- **What:** today's Update tests are pure Go (Doc.A → encode → Doc.B → decode + apply → state matches). The actual binary-protocol-compat proof requires JS Yjs encoding bytes that Go decodes + applies (and vice versa).
+- **Why deferred to Phase B3:** the Phase B port pipeline is complete; cross-language fixtures are now testable end-to-end. Splitting them into a separate commit keeps the fixture wiring (Node script + Go fixture loader) reviewable independently of the encoder/decoder/apply implementation.
+- **When to address:** next commit. This is the milestone-of-the-milestones — proves the prime directive.
 
 ### Surrogate-pair split returns invalid UTF-16
 

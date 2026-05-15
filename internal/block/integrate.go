@@ -37,6 +37,11 @@ type IntegrateContext interface {
 	// discriminator) as having user-observable changes; observers
 	// fire on the recorded set at Commit time.
 	AddChangedType(parent *Branch, parentSub *string)
+
+	// GetOrCreateBranch returns the root branch with the given name,
+	// creating it lazily if absent. Used by Repair to resolve
+	// ParentNamed references arriving from wire updates.
+	GetOrCreateBranch(name string) *Branch
 }
 
 // Integrate inserts this Item into its parent branch, running the
