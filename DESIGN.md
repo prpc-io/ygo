@@ -43,6 +43,30 @@ Pure-Go implementation of the Yjs CRDT framework, binary-protocol compatible wit
 - Non-Yjs encoding formats (Loro, Automerge, RGA).
 - WASM build.
 
+## Wire-format-driven storage decisions
+
+Two decisions are non-negotiable because they govern byte-level compatibility with the JS reference. Getting either wrong causes silent divergence on the wire after the first non-ASCII character or first concurrent typing burst, with no compile-time warning.
+
+### Text storage: UTF-16 code units internally, opaque at the API edge
+
+The JS Yjs `Item.split` operates on UTF-16 code units (the JavaScript `String` indexing unit). Two replicas exchanging V1 updates must agree on what "one character" means at the wire — otherwise IDs assigned to characters past the first non-BMP codepoint disagree, and both replicas diverge.
+
+- Internal storage of `Text` content: **UTF-16 code units (`[]uint16`)**, with `Item` length expressed in code units.
+- Public API `Text.Insert(pos int, s string)` accepts standard Go UTF-8 strings; the implementation re-encodes to UTF-16 at the boundary. Index `pos` is in UTF-16 code units to match JS `Y.Text` semantics, with helpers planned for code-point-based positions.
+- This is intentionally awkward Go in exchange for byte equality with the JS encoder. There is no other consistent choice.
+
+See `docs/yjs-architecture-notes.md` §19.
+
+### Item content as slice, not value
+
+Yjs collapses runs of consecutive character inserts by the same client at adjacent clocks into a single `Item` whose `Content` holds an N-length sequence. Single-element Items are an anti-optimization: the runtime immediately wants to merge them, and the integration algorithm assumes `Item.split(at)` exists.
+
+- `block.Content` is a tagged union where the `String` and similar variants hold a slice (`[]uint16`, `[]any`), not a single value.
+- `block.Item.Split(at uint64) (left, right *Item)` is implemented before any insertion logic; integration depends on it.
+- The Item's `len` field counts elements (clock units), independent of the in-memory representation.
+
+See `docs/yjs-architecture-notes.md` §3.2.
+
 ## API style
 
 Idiomatic Go signatures with JS-recognizable type names.
@@ -118,6 +142,11 @@ github.com/Deln0r/ygo/
   testdata/gen/           # Node.js fixture generator
   benchmarks/             # Port of dmonad/crdt-benchmarks (planned)
 ```
+
+## Working materials
+
+- `docs/yjs-architecture-notes.md` — distilled Yjs/Yrs reference, organized by concept, citing Sypytkowski / INTERNALS / docs.yjs.dev for every non-obvious claim. Read this before touching any code.
+- `docs/yrs-port-notes/` — per-layer summaries of the Rust `yrs` source, generated incrementally as each layer is ported. Each file (`block.md`, `store.md`, `transaction.md`, `types.md`, `update.md`, `protocol.md`) is the durable working memory used while implementing that layer; written before the Go skeleton, refined as integration questions surface.
 
 ## References
 
