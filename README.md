@@ -4,19 +4,29 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 
 ## Status
 
-**Pre-alpha.** Not yet usable. Public API will change without notice.
+**Pre-alpha.** Not yet usable as a library. Public API will change without notice. The CRDT engine works end-to-end and round-trips with JS Yjs for the implemented surface.
 
-| Component | Status |
+| Layer | Status |
 |---|---|
-| `internal/lib0` varint encoding | scaffold |
-| `Doc` core | not started |
-| `Map`, `Array`, `Text` shared types | not started |
-| State Vector + V1 update encoding | not started |
-| y-sync protocol | not started |
+| `internal/lib0` varint encoding | done; verified byte-equivalent vs JS lib0 (40 fixtures) |
+| `internal/block` (Item, Content, Branch, Splice, Integrate-YATA, TrySquash, Repair) | done; full YATA conflict resolution |
+| `internal/store` (BlockStore, ItemSlice, Materialize) | done |
+| `internal/doc` (Doc, Transaction, TransactionMut) | done; lock semantics + root-branch registry |
+| `internal/encoding` (StateVector, IdSet, Update encode/decode/apply) | done; JS Yjs → Go cross-language proven by 8 fixture scenarios |
+| `internal/types/Map` (Set / Get / Delete / Has / Len / Range / Clear) | done |
+| `internal/types/Array` | not started |
+| `internal/types/Text` | not started |
+| `internal/types/Xml*` | not started |
+| Persistence (`Store` interface + `modernc.org/sqlite` reference impl) | not started |
+| y-sync protocol (WebSocket framing) | not started |
 | Awareness CRDT | not started |
-| `Store` interface + sqlite reference impl | not started |
 | `cmd/ygo-server` (Hocuspocus-compat) | not started |
 | `gomobile bind` build target | not started |
+| Go → JS reverse-direction wire fixture | not started; tracked in [docs/tech-debt.md](docs/tech-debt.md) |
+| V2 update encoding | not started |
+| Snapshots / undo manager / sub-documents | not started |
+
+Roadmap and per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md).
 
 ## Goals
 
