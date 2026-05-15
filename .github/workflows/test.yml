@@ -41,7 +41,10 @@ jobs:
           go-version: "1.24"
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # Pinned (not "latest") so local installs of the same version
+          # produce identical results. Bump deliberately. See
+          # docs/tech-debt.md for the lint-not-enforced history.
+          version: v1.64.8
 
   fixtures:
     name: fixtures (cross-language)

@@ -17,6 +17,7 @@ import (
 	"encoding/binary"
 	"sync"
 
+	"github.com/Deln0r/ygo/internal/block"
 	"github.com/Deln0r/ygo/internal/store"
 )
 
@@ -50,10 +51,11 @@ type Options struct {
 // methods acquire the internal RWMutex appropriately. Direct field
 // access from outside the doc package is not safe.
 type Doc struct {
-	clientID uint64
-	store    *store.BlockStore
-	gc       bool
-	mu       sync.RWMutex
+	clientID     uint64
+	store        *store.BlockStore
+	gc           bool
+	mu           sync.RWMutex
+	rootBranches map[string]*block.Branch
 }
 
 // NewDoc returns a fresh Doc with default options and a random
@@ -70,9 +72,10 @@ func NewDocWithOptions(opts Options) *Doc {
 		cid = newClientID()
 	}
 	return &Doc{
-		clientID: cid,
-		store:    store.NewBlockStore(),
-		gc:       !opts.DisableGC,
+		clientID:     cid,
+		store:        store.NewBlockStore(),
+		gc:           !opts.DisableGC,
+		rootBranches: map[string]*block.Branch{},
 	}
 }
 
@@ -84,6 +87,36 @@ func (d *Doc) ClientID() uint64 { return d.clientID }
 // GC reports whether garbage collection of fully-observed deleted
 // items will run at transaction commit.
 func (d *Doc) GC() bool { return d.gc }
+
+// Branch returns the root branch with the given name, creating it
+// lazily on first access. The returned *block.Branch is the
+// underlying state shared by all types-layer wrappers (Map, Array,
+// Text) constructed against this name on this Doc.
+//
+// Concurrency: Branch acquires the doc's write lock to insert into
+// the root-branch registry. It MUST be called outside any active
+// Transaction or TransactionMut on this Doc — calling it inside a
+// transaction deadlocks (sync.RWMutex is non-reentrant).
+//
+// Typical usage:
+//
+//	d := doc.NewDoc()
+//	settingsBranch := d.Branch("settings")  // outside any txn
+//	m := types.NewMap(settingsBranch)        // wrap once
+//	// later, inside a txn:
+//	txn := d.WriteTxn()
+//	m.Set(txn, "color", "red")
+//	txn.Commit()
+func (d *Doc) Branch(name string) *block.Branch {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if b, ok := d.rootBranches[name]; ok {
+		return b
+	}
+	b := &block.Branch{Name: name, Map: map[string]*block.Item{}}
+	d.rootBranches[name] = b
+	return b
+}
 
 // newClientID returns a random non-zero uint64 in [1, MaxClientID].
 // Uses crypto/rand for collision resistance across replicas. Retry

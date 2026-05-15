@@ -17,12 +17,15 @@ Per-layer working notes generated incrementally as each layer of the Rust [`yrs`
 
 | Layer | yrs source | Note file | Status |
 |---|---|---|---|
-| Encoding primitives | `yrs/src/encoding/` | n/a — already shipped as `internal/lib0/`, verified against 40 fixtures | done |
-| Block / Item | `yrs/src/block.rs` | `block.md` | not yet written |
-| Block store | `yrs/src/store.rs` | `store.md` | not yet written |
-| Transaction lifecycle | `yrs/src/transaction.rs` | `transaction.md` | not yet written |
-| Shared types (Map, Array, Text) | `yrs/src/types/*.rs` | `types-map.md`, `types-array.md`, `types-text.md` | not yet written |
-| Update encoding (V1) | `yrs/src/update.rs`, `yrs/src/encoder.rs`, `yrs/src/decoder.rs` | `update-v1.md` | not yet written |
+| Encoding primitives | `yrs/src/encoding/` | n/a — shipped as `internal/lib0/`, verified against 40 JS fixtures | done |
+| Block / Item | `yrs/src/block.rs` | [`block.md`](block.md) | done; shipped as `internal/block/` |
+| Block store | `yrs/src/store.rs` | [`store.md`](store.md) | done; shipped as `internal/store/` |
+| Item.Integrate (YATA) + try_squash | `yrs/src/block.rs:562-846` | [`integrate.md`](integrate.md) | done; shipped in `internal/block/integrate.go` |
+| Transaction lifecycle | `yrs/src/transaction.rs` | [`transaction.md`](transaction.md) | done; shipped as `internal/doc/` |
+| Map shared type | `yrs/src/types/map.rs` | [`types-map.md`](types-map.md) | done; shipped as `internal/types/` |
+| Array shared type | `yrs/src/types/array.rs` | `types-array.md` | not yet written |
+| Text shared type | `yrs/src/types/text.rs` | `types-text.md` | not yet written |
+| Update encoding (V1) | `yrs/src/update.rs`, encoder/decoder | `update-v1.md` | not yet written |
 | y-sync protocol | `yrs/src/sync/protocol.rs` | `protocol-sync.md` | not yet written |
 | Awareness | `yrs/src/sync/awareness.rs` | `protocol-awareness.md` | not yet written |
 

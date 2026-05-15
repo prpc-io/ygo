@@ -12,12 +12,12 @@
 - **Impact when types layer lands:** Map.Get on a map-key whose tail item was spliced would return the stale (left) half instead of the live (right) half. Map convergence relies on this map-slot pointer being current.
 - **When to address:** when the types layer ships `Branch.Map`. Add the rewrite to `Item.Splice` (or move the responsibility to `Store.SplitBlock` if cleaner) and add a regression test.
 
-### Item.Repair pass not implemented
+### Item.Repair pass not implemented (partially mitigated)
 
 - **Where:** missing helper in `internal/block`.
-- **What:** yrs's `Item::repair(store)` (`block.rs:1368-1431`) runs before integrate during update apply. It resolves the new item's `Left` from `Origin` (via `MaterializeCleanEnd`), `Right` from `RightOrigin` (via `MaterializeCleanStart`), and fixes up an Unknown parent by inheriting from a resolved neighbour. Tests currently must pre-resolve these manually.
-- **Why deferred:** Repair is needed by the update-apply path which doesn't exist yet (no V1 decoder). Until then, only test scenarios with locally-generated inserts run, and those construct items with already-resolved Left/Right.
-- **When to address:** with the V1 update decoder layer.
+- **What:** yrs's `Item::repair(store)` (`block.rs:1368-1431`) runs before integrate during update apply. It resolves the new item's `Left` from `Origin` (via `MaterializeCleanEnd`), `Right` from `RightOrigin` (via `MaterializeCleanStart`), and fixes up an Unknown parent by inheriting from a resolved neighbour.
+- **Mitigation today:** types-layer constructors inline the Origin → Left resolution they need (`Map.Set` reads `branch.Map[key]` directly to compute Origin). No standalone Repair helper exists.
+- **When to address:** with the V1 update decoder layer, where incoming items arrive with raw Origin / RightOrigin IDs and need full pre-integrate resolution including parent-Unknown inheritance.
 
 ### Item.Integrate offset > 0 path stubbed
 
@@ -57,6 +57,27 @@
 - **Where:** `internal/doc/transaction.go` `TransactionMut.deletedIDs` field.
 - **What:** the wire delete set is RLE-encoded `(clientID, []ClockRange{Start, Len})` per client. Our `[]block.ID` records individual IDs, losing run information; squashing on emit is possible but suboptimal.
 - **When to address:** with the IdSet layer. Replace with a real `IdSet` value and have `Delete(item)` insert `(item.ID, item.Len)` ranges directly.
+
+## Types layer (Map and beyond)
+
+### Map.Observe not implemented
+
+- **Where:** missing method on `internal/types/map.go` `Map`.
+- **What:** yrs's `Map::observe(callback)` registers a per-Map listener that fires on each transaction commit with a `MapEvent` describing changed keys (`map.rs` ~line 200). We have no observer subsystem yet.
+- **Impact today:** none — no caller subscribes.
+- **When to address:** with the broader observer subsystem (paired with `TransactionMut.Commit` lifecycle steps 3-6 — pre-emit observers, update event emit, after-commit observers). Pre-condition: rework `TransactionMut.changedTypes` to carry the `parent_sub` dimension (already tracked above).
+
+### Map.Get value extraction handles only Any/String/Binary
+
+- **Where:** `internal/types/map.go` `extractValue`.
+- **What:** the user-visible value for `Map.Get(key)` is unpacked from `Content`. We handle `KindAny` (returning `Anys[0]`), `KindString` (returning `Str`), and `KindBinary` (returning `Bytes`). yrs additionally supports `KindEmbed`, `KindType` (nested shared types), `KindDoc` (subdocs), and the `Out`/`Value` enum dispatch.
+- **When to address:** with Array, Text, and the typed `Any` replacement (covered separately under "Any type is a placeholder"). Map gets its full value coverage as a free side-effect.
+
+### Map.Len is O(N) over branch.Map
+
+- **Where:** `internal/types/map.go` `Map.Len`.
+- **What:** `Len` iterates the entire `branch.Map` skipping tombstoned entries. yrs has a TODO at `map.rs:158` about caching live-count on the Branch; we'd inherit that optimization for free if/when Branch grows the cache.
+- **When to address:** if benchmarks show Len in hot paths.
 
 ### Surrogate-pair split returns invalid UTF-16
 
@@ -142,20 +163,13 @@
 
 ## Process / tooling
 
-### gofmt and golangci-lint not enforced before commit
+### Local pre-push lint (resolved on this commit)
 
-- **Where:** developer workflow.
-- **What:** CI rejects keep happening because local pre-push contract is "I ran `go vet` and tests, looks good." Two repeat incidents:
-  1. Commit `5d68d3c` — gofmt rejected two files (const-block spacing, slice-literal alignment). Fixed in `9375b37`.
-  2. Commits `085269d`, `58360cf`, `b1b117f` — golangci-lint's `unused` checker flagged four dead symbols (`(*Doc).blockStore` method, `mergeBlocks`/`deletedIDs`/`changedTypes` fields). The fields were write-only; `unused` flags those as "value never read." Fixed in `52d92a4` by removing the dead method and adding `DeletedIDs()` / `ChangedTypes()` accessors.
-- **Local-CI version drift:** brew's `golangci-lint` is v2.12.2; CI workflow installs v1.64.8 (config files have different syntax). Running locally needs `go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8` to match — not as convenient as `brew install`.
-- **Why deferred:** quick corrections cost a small commit each; the underlying gap is process-shape, not project-shape.
-- **When to address:** before the third repeat. Concrete options, ordered by leverage:
-  1. **Pin CI lint version explicitly** (`version: v1.64.8` instead of `latest` in `.github/workflows/test.yml`) so CI behaviour is reproducible and a `go install ...@v1.64.8` matches.
-  2. **Add a `Makefile` target `make check`** that runs `gofmt -l . && go vet ./... && go test ./... -race && golangci-lint run`. Mention in CONTRIBUTING.md as the pre-push contract.
-  3. **`.git/hooks/pre-commit` template** under `tools/git-hooks/` with a one-line install instruction. Developer opt-in; not enforced.
-  4. **Pre-push hook installer** that runs `make check` automatically.
-  Start with options 1+2. Option 4 once collaborators arrive.
+- **Was:** CI lint kept rejecting pushes because local pre-push only ran `go vet` + tests, not gofmt and not golangci-lint. Two repeat incidents (`5d68d3c` gofmt; `085269d`/`58360cf`/`b1b117f` unused symbols). Local brew installs golangci-lint v2 while CI uses v1.64.8 — configs incompatible.
+- **Resolved by:**
+  1. CI workflow now pins `version: v1.64.8` (was `latest`). Reproducible.
+  2. Root `Makefile` exposes `make check` (gofmt + vet + test + lint) and `make lint-install` (`go install ...@v1.64.8`) for the matching local linter.
+- **Remaining:** add a `pre-push` hook installer once collaborators arrive. Tracked separately if needed.
 
 ## Open questions captured but not resolved
 
