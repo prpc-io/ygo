@@ -6,9 +6,44 @@ package block
 // store, and protocol layers per docs/yrs-port-notes/README.md.
 
 // Branch is the owning collection for nested shared types (Map, Array,
-// Text, Xml). Defined in full when the types layer is ported. See
-// yrs/src/branch.rs.
-type Branch struct{}
+// Text, Xml). The full type lives in the types layer when it lands;
+// the fields below are the minimum subset that Item.Integrate and
+// Item.Splice need to manipulate.
+//
+// Concurrency: a Branch is mutated only under a TransactionMut write
+// lock. Reading from a non-current transaction is undefined.
+//
+// See yrs/src/branch.rs Branch.
+type Branch struct {
+	// Start is the head of the positional linked list (the first Item
+	// in document order). nil for empty or map-only branches.
+	Start *Item
+
+	// Map associates a map-key with the rightmost Item that wrote
+	// that key (the "winner" of the YATA tail). nil for non-map-like
+	// branches; populated lazily.
+	Map map[string]*Item
+
+	// Item is the back-reference to the Item whose Content owns this
+	// branch (for nested shared types). nil for root branches.
+	// Integrate consults Item.IsDeleted to decide whether to
+	// auto-delete the inserted item (parent_deleted path).
+	Item *Item
+
+	// BlockLen is the sum of Len for non-deleted, countable, positional
+	// items in this branch. Integrate updates it as items land.
+	BlockLen uint64
+
+	// ContentLen is the sum of content-len for the same items. For
+	// non-string content this matches BlockLen; for strings it may
+	// differ once UTF-16 encoding semantics are wired (see
+	// tech-debt.md surrogate-pair entry).
+	ContentLen uint64
+
+	// Name identifies a root branch. Empty string for non-root.
+	// Used by encoders that need to emit the parent type name.
+	Name string
+}
 
 // Move records a move operation for movable list items. Defined when
 // Y.Array move support is added (post-MVP). See yrs/src/moving.rs.

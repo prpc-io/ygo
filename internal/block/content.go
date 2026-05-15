@@ -177,3 +177,31 @@ func (c *Content) splitDeleted(offset uint64) (Content, error) {
 	c.DeletedLen = offset
 	return right, nil
 }
+
+// TrySquash extends the receiver to absorb other's payload, returning
+// true on success. Squashable kinds: Any (slice append), Deleted
+// (length sum), JSON (slice append), String (concat). Non-matching
+// kinds and other variants return false without mutation.
+//
+// Mirrors yrs/src/block.rs:1969-1993 ItemContent::try_squash.
+func (c *Content) TrySquash(other *Content) bool {
+	if c.Kind != other.Kind {
+		return false
+	}
+	switch c.Kind {
+	case KindAny:
+		c.Anys = append(c.Anys, other.Anys...)
+		return true
+	case KindDeleted:
+		c.DeletedLen += other.DeletedLen
+		return true
+	case KindJSON:
+		c.JSONStrs = append(c.JSONStrs, other.JSONStrs...)
+		return true
+	case KindString:
+		c.Str += other.Str
+		return true
+	default:
+		return false
+	}
+}

@@ -12,13 +12,51 @@
 - **Impact when types layer lands:** Map.Get on a map-key whose tail item was spliced would return the stale (left) half instead of the live (right) half. Map convergence relies on this map-slot pointer being current.
 - **When to address:** when the types layer ships `Branch.Map`. Add the rewrite to `Item.Splice` (or move the responsibility to `Store.SplitBlock` if cleaner) and add a regression test.
 
-### Item.Integrate / try_squash not implemented
+### Item.Repair pass not implemented
 
-- **Where:** `internal/block/item.go` (no method yet).
-- **What:** the YATA conflict-resolution loop that places a remote item into the local list, plus `try_squash` that merges adjacent same-client items at commit.
-- **Why deferred:** depends on store + transaction layers (parent.map walking, `txn.delete` on map-key tombstone, `txn.merge_blocks` at commit).
-- **When to address:** after Transaction lifecycle is in place.
-- **Reference:** `docs/yrs-port-notes/block.md` "Edge cases" → "Conflict resolution algorithm" + [yrs/src/block.rs:619-684](https://github.com/y-crdt/y-crdt/blob/main/yrs/src/block.rs). **Port byte-for-byte from yrs, do not reconstruct from prose.**
+- **Where:** missing helper in `internal/block`.
+- **What:** yrs's `Item::repair(store)` (`block.rs:1368-1431`) runs before integrate during update apply. It resolves the new item's `Left` from `Origin` (via `MaterializeCleanEnd`), `Right` from `RightOrigin` (via `MaterializeCleanStart`), and fixes up an Unknown parent by inheriting from a resolved neighbour. Tests currently must pre-resolve these manually.
+- **Why deferred:** Repair is needed by the update-apply path which doesn't exist yet (no V1 decoder). Until then, only test scenarios with locally-generated inserts run, and those construct items with already-resolved Left/Right.
+- **When to address:** with the V1 update decoder layer.
+
+### Item.Integrate offset > 0 path stubbed
+
+- **Where:** `internal/block/integrate.go` `Item.Integrate` first branch.
+- **What:** when `Update.integrate` applies an item whose first `offset` clocks are already known locally (the suffix is the actual delta), yrs trims the item's left side via `get_item_clean_end` + `materialize` + `Content.splice` (`block.rs:569-583`). We return false without doing this.
+- **Impact today:** none — no caller uses offset > 0 yet.
+- **When to address:** with the V1 update decoder, which is the only producer of partial-offset integrates.
+
+### Item.Integrate Named/ID parent resolution returns drop
+
+- **Where:** `internal/block/integrate.go` `Item.Integrate` second branch.
+- **What:** yrs resolves `TypePtr::Named(name)` via `store.get_or_create_type` (lazily creates a root branch) and `TypePtr::ID(id)` by looking up the parent Item and reading `Type` content. We return true (drop) for any parent kind other than already-resolved `ParentBranch`.
+- **Impact today:** updates carrying not-yet-resolved parent references silently get tombstoned. Real impact arrives once we accept updates from JS Yjs over the wire (which encodes parents as Named or ID, not as live Branch pointers).
+- **When to address:** with the types layer, which owns the root-type registry. Pair with the V1 decoder so wire updates resolve correctly on application.
+
+### Item.Integrate Move/Subdoc/Weak/Format integrations not handled
+
+- **Where:** `internal/block/integrate.go` `Item.Integrate` content-switch.
+- **What:** yrs's integrate handles five content-specific paths (`block.rs:786-818`):
+  - `KindMove`: re-integrates left+right moved ranges if they share a Move pointer.
+  - `KindDoc`: registers child subdoc, emits `subdocs.added` / `loaded`.
+  - `KindFormat`: `@todo searchmarker` no-op upstream — we mirror.
+  - `KindType`: weak-link source materialization (only with `weak` feature).
+  - Weak-link inheritance from left when overriding map-key.
+  We handle only the `KindDeleted` case (set FlagDeleted) and skip the rest.
+- **When to address:** Move post-MVP; Subdoc post-MVP; Weak post-MVP; Format with rich-text `Y.Text` formatting (Days 25-28 per ROADMAP).
+
+### TransactionMut.changedTypes drops the parent_sub dimension
+
+- **Where:** `internal/doc/transaction.go` `TransactionMut.AddChangedType` and `changedTypes` field.
+- **What:** yrs records `(parent, parent_sub)` pairs so observers can fire per-map-key. Our map drops `parent_sub` and only keys by `*Branch`, so observer dispatch will conflate map-key changes that happen in the same transaction.
+- **Impact today:** none — no observers exist.
+- **When to address:** with the observer subsystem. Restructure to `map[*Branch]map[string]struct{}` (nil sub-key for positional changes) or a `[]changeRecord` slice.
+
+### TransactionMut.deletedIDs is too narrow for the wire delete set
+
+- **Where:** `internal/doc/transaction.go` `TransactionMut.deletedIDs` field.
+- **What:** the wire delete set is RLE-encoded `(clientID, []ClockRange{Start, Len})` per client. Our `[]block.ID` records individual IDs, losing run information; squashing on emit is possible but suboptimal.
+- **When to address:** with the IdSet layer. Replace with a real `IdSet` value and have `Delete(item)` insert `(item.ID, item.Len)` ranges directly.
 
 ### Surrogate-pair split returns invalid UTF-16
 

@@ -126,3 +126,85 @@ func (t *TransactionMut) Doc() *Doc { return t.doc }
 // Store returns the doc's BlockStore. Safe to mutate from within
 // this transaction; the write lock prevents concurrent access.
 func (t *TransactionMut) Store() *store.BlockStore { return t.doc.store }
+
+// IntegrateContext implementation. These methods make TransactionMut
+// satisfy block.IntegrateContext so Item.Integrate can route store
+// access and change-tracking through the active transaction.
+
+// GetItem looks up the Item containing id in the doc's BlockStore.
+// Returns nil for GC cells or unknown IDs.
+func (t *TransactionMut) GetItem(id block.ID) *block.Item {
+	return t.doc.store.GetItem(id)
+}
+
+// MaterializeCleanStart returns an Item starting exactly at id.Clock,
+// splitting the underlying block in the store if id lands mid-block.
+// Returns nil if id is in a GC cell or unknown.
+func (t *TransactionMut) MaterializeCleanStart(id block.ID) *block.Item {
+	slc, ok := t.doc.store.GetItemCleanStart(id)
+	if !ok {
+		return nil
+	}
+	return t.doc.store.Materialize(slc)
+}
+
+// MaterializeCleanEnd returns an Item ending exactly at id.Clock
+// (inclusive), splitting if needed.
+func (t *TransactionMut) MaterializeCleanEnd(id block.ID) *block.Item {
+	slc, ok := t.doc.store.GetItemCleanEnd(id)
+	if !ok {
+		return nil
+	}
+	return t.doc.store.Materialize(slc)
+}
+
+// Delete tombstones an Item and records its ID for inclusion in the
+// transaction's eventual delete-set emission. The Item must already
+// be in the store.
+//
+// Note: the recursive-delete-of-Type-children path is not yet
+// implemented (tracked in tech-debt.md). This implementation handles
+// the simple case integrate uses for map-key LWW tombstoning.
+func (t *TransactionMut) Delete(item *block.Item) {
+	if item == nil || item.IsDeleted() {
+		return
+	}
+	item.SetDeleted(true)
+	t.deletedIDs = append(t.deletedIDs, item.ID)
+	if item.Parent.IsResolved() {
+		// Tombstoning subtracts from the parent's countable totals,
+		// mirroring yrs's branch.block_len -= len adjustment.
+		if item.IsCountable() && item.ParentSub == nil {
+			parent := item.Parent.Branch
+			if item.Len <= parent.BlockLen {
+				parent.BlockLen -= item.Len
+			}
+			if item.Len <= parent.ContentLen {
+				parent.ContentLen -= item.Len
+			}
+		}
+	}
+}
+
+// AddChangedType records that a Branch (with optional map-key
+// discriminator) saw user-observable changes during this
+// transaction. Drives observer dispatch at Commit.
+//
+// Currently records only the Branch pointer; the map-key dimension
+// is dropped because the observer subsystem does not yet consume it.
+// See tech-debt.md.
+func (t *TransactionMut) AddChangedType(parent *block.Branch, parentSub *string) {
+	if parent == nil {
+		return
+	}
+	if t.changedTypes == nil {
+		t.changedTypes = map[*block.Branch]struct{}{}
+	}
+	t.changedTypes[parent] = struct{}{}
+	_ = parentSub // intentionally dropped until observer subsystem lands
+}
+
+// Compile-time check that TransactionMut satisfies the
+// block.IntegrateContext interface. If this line stops compiling,
+// the integrate-context contract has shifted.
+var _ block.IntegrateContext = (*TransactionMut)(nil)
