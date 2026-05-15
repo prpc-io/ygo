@@ -167,3 +167,60 @@ func (s *BlockStore) GetStateVector() StateVector {
 	}
 	return sv
 }
+
+// SplitBlock locates the cell containing it.ID in its client's list,
+// calls it.Splice(offset), and inserts the new right-half cell at
+// index+1. Returns the new *Item.
+//
+// Returns nil if Splice declines (offset 0, offset >= it.Len, or
+// non-splittable content kind) or if the item is not currently in the
+// store.
+//
+// Implicitly uses UTF-16 offset semantics — matches yrs's
+// split_block_inner (block_store.rs:453-455). See store.md open
+// question 7.
+//
+// Mirrors yrs/src/block_store.rs:437-451.
+func (s *BlockStore) SplitBlock(it *block.Item, offset uint64) *block.Item {
+	l := s.GetClient(it.ID.Client)
+	if l == nil {
+		return nil
+	}
+	idx, ok := l.FindPivot(it.ID.Clock)
+	if !ok {
+		return nil
+	}
+	right := it.Splice(offset)
+	if right == nil {
+		return nil
+	}
+	l.Insert(idx+1, CellOfItem(right))
+	return right
+}
+
+// Materialize splits the underlying block on both sides (as needed) so
+// that the returned *Item covers exactly the slice's [Start, End] range
+// in clock units. If the slice already covers the full block on either
+// side, the corresponding split is skipped.
+//
+// Returns the (possibly new) *Item that represents the slice exactly.
+// Always uses UTF-16 offset semantics, matching yrs's hard-coding.
+//
+// Mirrors yrs/src/store.rs:295-342 Store::materialize (without the
+// linked_by rewiring, which lives on the future Doc layer once weak
+// references arrive).
+func (s *BlockStore) Materialize(slc ItemSlice) *block.Item {
+	ptr := slc.Ptr
+	if !slc.AdjacentLeft() {
+		right := s.SplitBlock(ptr, slc.Start)
+		if right == nil {
+			return ptr
+		}
+		ptr = right
+	}
+	if !slc.AdjacentRight() {
+		sliceLen := slc.End - slc.Start + 1
+		s.SplitBlock(ptr, sliceLen)
+	}
+	return ptr
+}

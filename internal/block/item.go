@@ -117,6 +117,65 @@ func setFlag(bits *uint16, mask uint16, on bool) {
 	}
 }
 
+// Splice cuts self at offset (in clock units) and returns the new
+// right-half Item. Returns nil if offset is 0, offset >= self.Len, or
+// the content kind is not splittable.
+//
+// Mutations:
+//   - self.Len truncated to offset.
+//   - self.Content split (right half migrated into the returned Item).
+//   - self.Right re-pointed to the new Item; the previous self.Right's
+//     Left re-pointed to the new Item if it existed.
+//
+// The new right Item carries:
+//   - ID = (self.client, self.clock + offset).
+//   - Len = self.Len - offset (original Len).
+//   - Origin = &(self.client, self.clock + offset - 1) — the ID of the
+//     last element of self after truncation; this is the YATA-time
+//     left neighbour of the new half.
+//   - RightOrigin = self.RightOrigin (preserved; immutable per YATA).
+//   - Parent, ParentSub, Moved, Flags copied from self.
+//   - Left = self; Right = self's original Right.
+//
+// Caller is responsible for storing the new right Item in the block
+// store. Use store.BlockStore.SplitBlock for integrated insertion.
+//
+// Known limitation: when self was the most recent writer on a map-like
+// parent (Right=nil, ParentSub != nil), yrs additionally rewrites
+// parent.Branch.Map[*ParentSub] = right. We do not, because Branch is
+// a stub until the types layer lands. See tech-debt.md.
+//
+// Mirrors yrs/src/block.rs:516-560 ItemPtr::splice.
+func (it *Item) Splice(offset uint64) *Item {
+	if offset == 0 || offset >= it.Len {
+		return nil
+	}
+	rightContent, err := it.Content.Split(offset)
+	if err != nil {
+		return nil
+	}
+	rightOrigin := ID{Client: it.ID.Client, Clock: it.ID.Clock + offset - 1}
+	right := &Item{
+		ID:          ID{Client: it.ID.Client, Clock: it.ID.Clock + offset},
+		Len:         it.Len - offset,
+		Left:        it,
+		Right:       it.Right,
+		Origin:      &rightOrigin,
+		RightOrigin: it.RightOrigin,
+		Content:     rightContent,
+		Parent:      it.Parent,
+		ParentSub:   it.ParentSub,
+		Moved:       it.Moved,
+		Flags:       it.Flags,
+	}
+	if it.Right != nil {
+		it.Right.Left = right
+	}
+	it.Right = right
+	it.Len = offset
+	return right
+}
+
 // EqualByID reports whether two items name the same insertion (same ID).
 // Yjs's Item::PartialEq derives equality through ItemPtr which compares
 // by id only; this is the same semantics in Go.

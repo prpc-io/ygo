@@ -148,6 +148,176 @@ func TestBlockStore_GetClientLazy(t *testing.T) {
 	}
 }
 
+func TestBlockStore_SplitBlock_String(t *testing.T) {
+	s := NewBlockStore()
+	it := &block.Item{
+		ID:      block.ID{Client: 1, Clock: 0},
+		Len:     5,
+		Content: block.Content{Kind: block.KindString, Str: "hello"},
+	}
+	s.PushBlock(it)
+
+	right := s.SplitBlock(it, 2)
+	if right == nil {
+		t.Fatal("SplitBlock returned nil")
+	}
+
+	// Two cells now: original at clock 0..1, right at 2..4
+	l := s.GetClient(1)
+	if l.Len() != 2 {
+		t.Fatalf("client list len = %d, want 2", l.Len())
+	}
+	if c, _ := l.Get(0); c.Item != it || c.Item.Len != 2 {
+		t.Errorf("cell 0 = %+v, want left half (Len=2)", c)
+	}
+	if c, _ := l.Get(1); c.Item != right || c.Item.Len != 3 || c.Item.ID.Clock != 2 {
+		t.Errorf("cell 1 = %+v, want right half (Len=3, Clock=2)", c)
+	}
+	if err := l.CheckInvariants(); err != nil {
+		t.Errorf("invariants violated after split: %v", err)
+	}
+
+	// State vector unchanged — total clock count is the same.
+	if got := s.GetClock(1); got != 5 {
+		t.Errorf("GetClock = %d, want 5 (preserved across split)", got)
+	}
+}
+
+func TestBlockStore_SplitBlock_RejectedOffsets(t *testing.T) {
+	s := NewBlockStore()
+	it := &block.Item{
+		ID:      block.ID{Client: 1, Clock: 0},
+		Len:     5,
+		Content: block.Content{Kind: block.KindString, Str: "hello"},
+	}
+	s.PushBlock(it)
+
+	for _, offset := range []uint64{0, 5, 100} {
+		if got := s.SplitBlock(it, offset); got != nil {
+			t.Errorf("SplitBlock offset %d should return nil, got %+v", offset, got)
+		}
+		if l := s.GetClient(1); l.Len() != 1 {
+			t.Errorf("rejected SplitBlock should not modify list, got len=%d", l.Len())
+		}
+	}
+}
+
+func TestBlockStore_SplitBlock_UnknownItem(t *testing.T) {
+	s := NewBlockStore()
+	stranger := &block.Item{
+		ID:      block.ID{Client: 99, Clock: 0},
+		Len:     5,
+		Content: block.Content{Kind: block.KindString, Str: "hello"},
+	}
+	if got := s.SplitBlock(stranger, 2); got != nil {
+		t.Errorf("SplitBlock on unknown client should return nil, got %+v", got)
+	}
+}
+
+func TestBlockStore_Materialize_FullSlice(t *testing.T) {
+	s := NewBlockStore()
+	it := &block.Item{
+		ID:      block.ID{Client: 1, Clock: 0},
+		Len:     5,
+		Content: block.Content{Kind: block.KindString, Str: "hello"},
+	}
+	s.PushBlock(it)
+
+	slc := ItemSlice{Ptr: it, Start: 0, End: 4}
+	got := s.Materialize(slc)
+
+	if got != it {
+		t.Errorf("Materialize on full slice should return same pointer")
+	}
+	if l := s.GetClient(1); l.Len() != 1 {
+		t.Errorf("Materialize on full slice should not split, list len = %d", l.Len())
+	}
+}
+
+func TestBlockStore_Materialize_LeftAdjacent(t *testing.T) {
+	s := NewBlockStore()
+	it := &block.Item{
+		ID:      block.ID{Client: 1, Clock: 0},
+		Len:     5,
+		Content: block.Content{Kind: block.KindString, Str: "hello"},
+	}
+	s.PushBlock(it)
+
+	// Slice covers clocks 0..2 (start adjacent, end interior).
+	slc := ItemSlice{Ptr: it, Start: 0, End: 2}
+	got := s.Materialize(slc)
+
+	// Should split only on the right.
+	if got != it {
+		t.Errorf("LeftAdjacent: returned ptr should be original (no left split)")
+	}
+	if got.Len != 3 {
+		t.Errorf("LeftAdjacent: Len = %d, want 3", got.Len)
+	}
+	if l := s.GetClient(1); l.Len() != 2 {
+		t.Errorf("LeftAdjacent: expect 2 cells after right split, got %d", l.Len())
+	}
+}
+
+func TestBlockStore_Materialize_RightAdjacent(t *testing.T) {
+	s := NewBlockStore()
+	it := &block.Item{
+		ID:      block.ID{Client: 1, Clock: 0},
+		Len:     5,
+		Content: block.Content{Kind: block.KindString, Str: "hello"},
+	}
+	s.PushBlock(it)
+
+	// Slice covers clocks 2..4 (start interior, end adjacent).
+	slc := ItemSlice{Ptr: it, Start: 2, End: 4}
+	got := s.Materialize(slc)
+
+	// Should split only on the left, returning the right half.
+	if got == it {
+		t.Errorf("RightAdjacent: returned ptr should be the right half, not original")
+	}
+	if got.Len != 3 {
+		t.Errorf("RightAdjacent: Len = %d, want 3", got.Len)
+	}
+	if got.ID.Clock != 2 {
+		t.Errorf("RightAdjacent: ID.Clock = %d, want 2", got.ID.Clock)
+	}
+	if l := s.GetClient(1); l.Len() != 2 {
+		t.Errorf("RightAdjacent: expect 2 cells after left split, got %d", l.Len())
+	}
+}
+
+func TestBlockStore_Materialize_Middle(t *testing.T) {
+	s := NewBlockStore()
+	it := &block.Item{
+		ID:      block.ID{Client: 1, Clock: 0},
+		Len:     5,
+		Content: block.Content{Kind: block.KindString, Str: "hello"},
+	}
+	s.PushBlock(it)
+
+	// Slice covers clocks 1..3 (interior on both sides).
+	slc := ItemSlice{Ptr: it, Start: 1, End: 3}
+	got := s.Materialize(slc)
+
+	// Should split twice, returning the middle.
+	if got.Len != 3 {
+		t.Errorf("Middle: Len = %d, want 3", got.Len)
+	}
+	if got.ID.Clock != 1 {
+		t.Errorf("Middle: ID.Clock = %d, want 1", got.ID.Clock)
+	}
+	if got.Content.Str != "ell" {
+		t.Errorf("Middle: Content.Str = %q, want %q", got.Content.Str, "ell")
+	}
+	if l := s.GetClient(1); l.Len() != 3 {
+		t.Errorf("Middle: expect 3 cells after both splits, got %d", l.Len())
+	}
+	if err := s.GetClient(1).CheckInvariants(); err != nil {
+		t.Errorf("invariants violated: %v", err)
+	}
+}
+
 func TestBlockStore_MultiClient(t *testing.T) {
 	s := NewBlockStore()
 	s.PushBlock(makeItem(1, 0, 100))

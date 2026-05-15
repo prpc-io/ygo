@@ -1,5 +1,7 @@
 package block
 
+import "fmt"
+
 // ContentKind discriminates the variants of Content. The numeric values
 // are the Yjs wire ref numbers (BLOCK_ITEM_*_REF_NUMBER from
 // yrs/src/block.rs:28-72) and must not change.
@@ -113,4 +115,65 @@ func (c Content) Len(_ OffsetKind) uint64 {
 		return 0
 	}
 	return 0
+}
+
+// Split cuts the content at offset and returns the right half, mutating
+// the receiver to hold the left half. Returns an error if the content
+// kind is not splittable or offset is out of range.
+//
+// Splittable kinds: String (currently byte offsets — UTF-16 awareness
+// arrives with the Text shared type, see tech-debt.md), Any, JSON,
+// Deleted. All other kinds are single-element or parallel cell kinds
+// and reject Split.
+//
+// See yrs/src/block.rs ItemContent::splice.
+func (c *Content) Split(offset uint64) (Content, error) {
+	switch c.Kind {
+	case KindString:
+		return c.splitString(offset)
+	case KindAny:
+		return c.splitAny(offset)
+	case KindJSON:
+		return c.splitJSON(offset)
+	case KindDeleted:
+		return c.splitDeleted(offset)
+	default:
+		return Content{}, fmt.Errorf("block: content kind %d is not splittable", c.Kind)
+	}
+}
+
+func (c *Content) splitString(offset uint64) (Content, error) {
+	if offset == 0 || offset >= uint64(len(c.Str)) {
+		return Content{}, fmt.Errorf("block: split offset %d out of range for string length %d", offset, len(c.Str))
+	}
+	right := Content{Kind: KindString, Str: c.Str[offset:]}
+	c.Str = c.Str[:offset]
+	return right, nil
+}
+
+func (c *Content) splitAny(offset uint64) (Content, error) {
+	if offset == 0 || offset >= uint64(len(c.Anys)) {
+		return Content{}, fmt.Errorf("block: split offset %d out of range for any-slice length %d", offset, len(c.Anys))
+	}
+	right := Content{Kind: KindAny, Anys: c.Anys[offset:]}
+	c.Anys = c.Anys[:offset]
+	return right, nil
+}
+
+func (c *Content) splitJSON(offset uint64) (Content, error) {
+	if offset == 0 || offset >= uint64(len(c.JSONStrs)) {
+		return Content{}, fmt.Errorf("block: split offset %d out of range for json-slice length %d", offset, len(c.JSONStrs))
+	}
+	right := Content{Kind: KindJSON, JSONStrs: c.JSONStrs[offset:]}
+	c.JSONStrs = c.JSONStrs[:offset]
+	return right, nil
+}
+
+func (c *Content) splitDeleted(offset uint64) (Content, error) {
+	if offset == 0 || offset >= c.DeletedLen {
+		return Content{}, fmt.Errorf("block: split offset %d out of range for deleted length %d", offset, c.DeletedLen)
+	}
+	right := Content{Kind: KindDeleted, DeletedLen: c.DeletedLen - offset}
+	c.DeletedLen = offset
+	return right, nil
 }

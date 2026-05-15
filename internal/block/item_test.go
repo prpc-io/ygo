@@ -182,6 +182,165 @@ func TestItem_EqualByID(t *testing.T) {
 	}
 }
 
+func TestItem_Splice_String(t *testing.T) {
+	parent := Parent{Kind: ParentNamed, Named: "doc"}
+	subKey := "key"
+	originID := ID{Client: 7, Clock: 99}
+	rightOriginID := ID{Client: 8, Clock: 0}
+	it := &Item{
+		ID:          ID{Client: 1, Clock: 100},
+		Len:         5,
+		Origin:      &originID,
+		RightOrigin: &rightOriginID,
+		Content:     Content{Kind: KindString, Str: "hello"},
+		Parent:      parent,
+		ParentSub:   &subKey,
+		Flags:       FlagCountable,
+	}
+
+	right := it.Splice(2)
+	if right == nil {
+		t.Fatal("Splice returned nil")
+	}
+
+	// Left half mutated in place.
+	if it.Len != 2 {
+		t.Errorf("left.Len = %d, want 2", it.Len)
+	}
+	if it.Content.Str != "he" {
+		t.Errorf("left.Content.Str = %q, want %q", it.Content.Str, "he")
+	}
+	if it.Right != right {
+		t.Errorf("left.Right not set to new right item")
+	}
+	if it.Origin != &originID {
+		t.Errorf("left.Origin must remain unchanged")
+	}
+	if it.RightOrigin != &rightOriginID {
+		t.Errorf("left.RightOrigin must remain unchanged (immutable per YATA)")
+	}
+
+	// Right half: id, len, origin, content.
+	wantRightID := ID{Client: 1, Clock: 102}
+	if !right.ID.Equal(wantRightID) {
+		t.Errorf("right.ID = %v, want %v", right.ID, wantRightID)
+	}
+	if right.Len != 3 {
+		t.Errorf("right.Len = %d, want 3", right.Len)
+	}
+	if right.Content.Str != "llo" {
+		t.Errorf("right.Content.Str = %q, want %q", right.Content.Str, "llo")
+	}
+	wantRightOriginID := ID{Client: 1, Clock: 101}
+	if right.Origin == nil || !right.Origin.Equal(wantRightOriginID) {
+		t.Errorf("right.Origin = %v, want %v (last clock of left after truncation)", right.Origin, wantRightOriginID)
+	}
+	if right.RightOrigin != it.RightOrigin {
+		t.Errorf("right.RightOrigin must inherit from left's RightOrigin")
+	}
+	if right.Left != it {
+		t.Errorf("right.Left must point at left half")
+	}
+	if right.Right != nil {
+		t.Errorf("right.Right should inherit nil from left's original Right")
+	}
+	if right.Parent != parent {
+		t.Errorf("right.Parent must inherit from left")
+	}
+	if right.ParentSub != it.ParentSub {
+		t.Errorf("right.ParentSub must inherit from left")
+	}
+	if right.Flags != it.Flags {
+		t.Errorf("right.Flags = %b, want %b", right.Flags, it.Flags)
+	}
+}
+
+func TestItem_Splice_NeighbourRelinking(t *testing.T) {
+	// Setup: A <- B(len=5) -> C
+	a := &Item{ID: ID{Client: 1, Clock: 0}, Len: 1}
+	b := &Item{
+		ID:      ID{Client: 1, Clock: 1},
+		Len:     5,
+		Left:    a,
+		Content: Content{Kind: KindString, Str: "abcde"},
+	}
+	c := &Item{ID: ID{Client: 1, Clock: 6}, Len: 1, Left: b}
+	a.Right = b
+	b.Right = c
+
+	// Splice B at offset 2.
+	newR := b.Splice(2)
+	if newR == nil {
+		t.Fatal("Splice returned nil")
+	}
+
+	// Expected: A <- B(2) <- newR(3) -> C
+	if a.Right != b {
+		t.Error("A.Right should still point at B (left half)")
+	}
+	if b.Left != a {
+		t.Error("B.Left must remain A")
+	}
+	if b.Right != newR {
+		t.Error("B.Right must point at newR")
+	}
+	if newR.Left != b {
+		t.Error("newR.Left must point at B")
+	}
+	if newR.Right != c {
+		t.Error("newR.Right must inherit B's original Right (C)")
+	}
+	if c.Left != newR {
+		t.Error("C.Left must be re-pointed to newR")
+	}
+}
+
+func TestItem_Splice_RejectedOffsets(t *testing.T) {
+	mk := func() *Item {
+		return &Item{
+			ID:      ID{Client: 1, Clock: 0},
+			Len:     5,
+			Content: Content{Kind: KindString, Str: "hello"},
+		}
+	}
+	cases := []struct {
+		name   string
+		offset uint64
+	}{
+		{"offset 0", 0},
+		{"offset == Len", 5},
+		{"offset > Len", 100},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			it := mk()
+			before := it.Len
+			beforeStr := it.Content.Str
+			if got := it.Splice(tc.offset); got != nil {
+				t.Errorf("Splice(%d) = %+v, want nil", tc.offset, got)
+			}
+			if it.Len != before || it.Content.Str != beforeStr {
+				t.Errorf("Splice(%d) mutated rejected item", tc.offset)
+			}
+		})
+	}
+}
+
+func TestItem_Splice_NonSplittableContent(t *testing.T) {
+	it := &Item{
+		ID:      ID{Client: 1, Clock: 0},
+		Len:     1,
+		Content: Content{Kind: KindBinary, Bytes: []byte{1, 2, 3}},
+	}
+	// Splice on Len=1 returns nil from the offset guard before content
+	// is inspected. Try an artificial Len=3 with non-splittable content
+	// to drive the Content.Split error path.
+	it.Len = 3
+	if got := it.Splice(1); got != nil {
+		t.Errorf("Splice on KindBinary should return nil, got %+v", got)
+	}
+}
+
 func TestParent_IsResolved(t *testing.T) {
 	cases := []struct {
 		name string

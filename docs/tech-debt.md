@@ -4,13 +4,13 @@
 
 ## Block layer
 
-### Item.Splice not implemented
+### Item.Splice does not rewrite parent.Branch.Map for map-key tail items
 
-- **Where:** `internal/block/item.go` (no method yet).
-- **What:** `Item.Splice(offset uint64, kind OffsetKind) *Item` — splits an item mid-clock-range and returns the new right half with proper origin/right_origin propagation and linked-list relinking.
-- **Why deferred:** requires content slicing semantics + ID arithmetic + linked-list pointer rewriting. Without the block store there is no realistic place to register the returned right half, so splice in isolation is hard to test meaningfully.
-- **When to address:** after `BlockStore` lands.
-- **Reference:** [yrs/src/block.rs:516-560](https://github.com/y-crdt/y-crdt/blob/main/yrs/src/block.rs) `ItemPtr::splice`. Distill into Go after store skeleton.
+- **Where:** `internal/block/item.go` `Item.Splice`.
+- **What:** when the item being spliced is the most recent writer on a map-like parent (`Right == nil && ParentSub != nil`), yrs additionally rewrites `parent.Branch.Map[*ParentSub]` from the original item to the new right half (`block.rs:516-560`). We do not, because `Branch` is a stub until the types layer lands.
+- **Impact today:** none — no code path queries `Branch.Map` yet.
+- **Impact when types layer lands:** Map.Get on a map-key whose tail item was spliced would return the stale (left) half instead of the live (right) half. Map convergence relies on this map-slot pointer being current.
+- **When to address:** when the types layer ships `Branch.Map`. Add the rewrite to `Item.Splice` (or move the responsibility to `Store.SplitBlock` if cleaner) and add a regression test.
 
 ### Item.Integrate / try_squash not implemented
 
