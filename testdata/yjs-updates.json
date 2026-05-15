@@ -4,6 +4,7 @@
     {
       "description": "empty doc, no ops",
       "js_client_id": 100,
+      "root_kind": "map",
       "root_name": "x",
       "update_hex": "0000",
       "expected_map": {}
@@ -11,6 +12,7 @@
     {
       "description": "single Map.set string",
       "js_client_id": 101,
+      "root_kind": "map",
       "root_name": "settings",
       "update_hex": "0101650028010873657474696e677305636f6c6f7201770372656400",
       "expected_map": {
@@ -20,6 +22,7 @@
     {
       "description": "two Map.set on different keys",
       "js_client_id": 102,
+      "root_kind": "map",
       "root_name": "settings",
       "update_hex": "0102660028010873657474696e677305636f6c6f7201770372656428010873657474696e6773046c616e67017702676f00",
       "expected_map": {
@@ -30,6 +33,7 @@
     {
       "description": "Map.set across multiple value types",
       "js_client_id": 103,
+      "root_kind": "map",
       "root_name": "x",
       "update_hex": "0106670028010178017301770568656c6c6f280101780169017d2a280101780166017b40091eb851eb851f2801017806625f7472756501782801017807625f66616c7365017928010178076e756c6c76616c017e00",
       "expected_map": {
@@ -44,6 +48,7 @@
     {
       "description": "Map.set + Map.set same key (LWW)",
       "js_client_id": 104,
+      "root_kind": "map",
       "root_name": "x",
       "update_hex": "0102680021010178016b02a8680101770574686972640168010002",
       "expected_map": {
@@ -53,6 +58,7 @@
     {
       "description": "Map.set + Map.delete",
       "js_client_id": 105,
+      "root_kind": "map",
       "root_name": "x",
       "update_hex": "0102690021010178016101280101780162017704626574610169010001",
       "expected_map": {
@@ -62,6 +68,7 @@
     {
       "description": "Map.set then delete then set again",
       "js_client_id": 106,
+      "root_kind": "map",
       "root_name": "x",
       "update_hex": "01026a0021010178016b01a86a000177027632016a010001",
       "expected_map": {
@@ -71,12 +78,111 @@
     {
       "description": "Map with unicode keys and values",
       "js_client_id": 107,
+      "root_kind": "map",
       "root_name": "x",
       "update_hex": "01026b002801017808d0bad0bbd18ed187017710d0b7d0bdd0b0d187d0b5d0bdd0b8d0b52801017805656d6f6a690177026f6b00",
       "expected_map": {
         "ключ": "значение",
         "emoji": "ok"
       }
+    },
+    {
+      "description": "empty Array, no ops",
+      "js_client_id": 200,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0000",
+      "expected_array": []
+    },
+    {
+      "description": "Array.push single value",
+      "js_client_id": 201,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0101c90100080101780177046f6e6c7900",
+      "expected_array": [
+        "only"
+      ]
+    },
+    {
+      "description": "Array.push batch packed into one Item",
+      "js_client_id": 202,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0101ca0100080101780577016177016277016377016477016500",
+      "expected_array": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e"
+      ]
+    },
+    {
+      "description": "Array.push of various value types",
+      "js_client_id": 203,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0101cb010008010178067701737d2a7b40091eb851eb851f78797e00",
+      "expected_array": [
+        "s",
+        42,
+        3.14,
+        true,
+        false,
+        null
+      ]
+    },
+    {
+      "description": "Array.insert in middle of packed run (split)",
+      "js_client_id": 204,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0103cc0100080101780277016177016288cc010102770163770164c8cc0101cc01020177015800",
+      "expected_array": [
+        "a",
+        "b",
+        "X",
+        "c",
+        "d"
+      ]
+    },
+    {
+      "description": "Array.delete single in middle",
+      "js_client_id": 205,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0103cd0100080101780177016181cd01000188cd01010277016377016401cd01010101",
+      "expected_array": [
+        "a",
+        "c",
+        "d"
+      ]
+    },
+    {
+      "description": "Array.delete range across packed run",
+      "js_client_id": 206,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0103ce0100080101780277016177016281ce01010388ce01040177016601ce01010203",
+      "expected_array": [
+        "a",
+        "b",
+        "f"
+      ]
+    },
+    {
+      "description": "Array sequence of separate pushes then insert",
+      "js_client_id": 207,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0103cf0100080101780277016177016288cf010101770163c8cf0101cf01020177015800",
+      "expected_array": [
+        "a",
+        "b",
+        "X",
+        "c"
+      ]
     }
   ]
 }

@@ -23,7 +23,7 @@ Per-layer working notes generated incrementally as each layer of the Rust [`yrs`
 | Item.Integrate (YATA) + try_squash | `yrs/src/block.rs:562-846` | [`integrate.md`](integrate.md) | done; shipped in `internal/block/integrate.go` |
 | Transaction lifecycle | `yrs/src/transaction.rs` | [`transaction.md`](transaction.md) | done; shipped as `internal/doc/` |
 | Map shared type | `yrs/src/types/map.rs` | [`types-map.md`](types-map.md) | done; shipped as `internal/types/` |
-| Array shared type | `yrs/src/types/array.rs` | `types-array.md` | not yet written |
+| Array shared type | `yrs/src/types/array.rs` | [`types-array.md`](types-array.md) | done; shipped as `internal/types/Array`; 8 cross-language fixture scenarios passing |
 | Text shared type | `yrs/src/types/text.rs` | `types-text.md` | not yet written |
 | Update encoding (V1) | `yrs/src/update.rs`, encoder/decoder | [`update-v1.md`](update-v1.md) | done; JS Yjs → Go direction proven by 8 fixture scenarios; Go → JS reverse direction tracked in tech-debt |
 | y-sync protocol | `yrs/src/sync/protocol.rs` | `protocol-sync.md` | not yet written |

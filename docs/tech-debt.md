@@ -79,6 +79,25 @@
 - **What:** `Len` iterates the entire `branch.Map` skipping tombstoned entries. yrs has a TODO at `map.rs:158` about caching live-count on the Branch; we'd inherit that optimization for free if/when Branch grows the cache.
 - **When to address:** if benchmarks show Len in hot paths.
 
+### Array position resolution is O(N) — no search-marker cache
+
+- **Where:** `internal/types/array.go` `findInsertPosition`, `Get`, `Delete`.
+- **What:** every operation that needs to translate a user-facing index into a *Item walks `branch.Start` linearly. Operations on long arrays (10K+ elements) become O(N) per op.
+- **Why deferred:** per `docs/yrs-port-notes/types-array.md` finding 1, yrs main has no search-marker cache either. We're matching the executable spec; adding the cache is a pure-Go optimization unblocked by benchmarks, not a wire-format dependency.
+- **When to address:** when a real workload shows position resolution in hot paths. Implementation: bounded-LRU `[]struct{ idx uint64; item *Item }` on Branch, updated heuristically when traversal cost exceeds a threshold (~80 entries per yrs INTERNALS.md).
+
+### Array.Range value extraction handles only Any/String/Binary
+
+- **Where:** `internal/types/array.go` `extractValueAt`.
+- **What:** same shape as Map's `extractValue`. KindEmbed / KindType (nested types) / KindDoc (subdocs) / KindMove return nil on Get/Range.
+- **When to address:** with the respective subsystems (nested-type construction, subdocs, Y.Array.move).
+
+### Array.Move not implemented (Y.Array.move equivalent)
+
+- **Where:** missing on `internal/types/array.go`.
+- **What:** Y.Array supports `move(srcIdx, dstIdx)` to relocate an element. yrs implements via the ContentMove variant; we do not encode/decode/integrate Move at all.
+- **When to address:** post-MVP per ROADMAP. Pre-conditions: ContentMove encode/decode in encoding layer, Move integration in Item.Integrate (deferred per integrate.md).
+
 ## Encoding layer (V1 wire format)
 
 ### StateVector / IdSet have no JS Yjs cross-language byte-equality fixtures

@@ -18,11 +18,13 @@ type fixtureFile struct {
 }
 
 type fixtureScenario struct {
-	Description string                 `json:"description"`
-	JsClientID  uint64                 `json:"js_client_id"`
-	RootName    string                 `json:"root_name"`
-	UpdateHex   string                 `json:"update_hex"`
-	ExpectedMap map[string]interface{} `json:"expected_map"`
+	Description   string                 `json:"description"`
+	JsClientID    uint64                 `json:"js_client_id"`
+	RootKind      string                 `json:"root_kind"` // "map" or "array"; defaults to "map" for back-compat
+	RootName      string                 `json:"root_name"`
+	UpdateHex     string                 `json:"update_hex"`
+	ExpectedMap   map[string]interface{} `json:"expected_map,omitempty"`
+	ExpectedArray []interface{}          `json:"expected_array,omitempty"`
 }
 
 // TestFixtures_DecodeApplyJSYjsUpdates is the binary-protocol-compat
@@ -75,7 +77,7 @@ func TestFixtures_DecodeApplyJSYjsUpdates(t *testing.T) {
 
 			// Apply to a fresh Doc.
 			d := doc.NewDoc()
-			m := types.NewMap(d.Branch(sc.RootName))
+			branch := d.Branch(sc.RootName)
 
 			txn := d.WriteTxn()
 			if err := u.Apply(txn); err != nil {
@@ -83,30 +85,62 @@ func TestFixtures_DecodeApplyJSYjsUpdates(t *testing.T) {
 			}
 			txn.Commit()
 
-			// Verify every expected key matches.
-			for key, expected := range sc.ExpectedMap {
-				got := m.Get(key)
-				if !valueEqual(got, expected) {
-					t.Errorf("key %q: got %v (%T), want %v (%T)", key, got, got, expected, expected)
-				}
+			rootKind := sc.RootKind
+			if rootKind == "" {
+				rootKind = "map" // back-compat with older fixtures
 			}
-
-			// Verify no unexpected live keys exist.
-			gotKeys := map[string]struct{}{}
-			m.Range(func(k string, _ any) bool {
-				gotKeys[k] = struct{}{}
-				return true
-			})
-			if len(gotKeys) != len(sc.ExpectedMap) {
-				t.Errorf("Map.Range visited %d live keys; want %d. seen=%v expected=%v",
-					len(gotKeys), len(sc.ExpectedMap), keysOf(gotKeys), keysOfStr(sc.ExpectedMap))
-			}
-			for k := range sc.ExpectedMap {
-				if _, ok := gotKeys[k]; !ok {
-					t.Errorf("expected key %q not visible in Map.Range", k)
-				}
+			switch rootKind {
+			case "map":
+				verifyMapScenario(t, types.NewMap(branch), sc.ExpectedMap)
+			case "array":
+				verifyArrayScenario(t, types.NewArray(branch), sc.ExpectedArray)
+			default:
+				t.Fatalf("unknown root_kind %q", rootKind)
 			}
 		})
+	}
+}
+
+func verifyMapScenario(t *testing.T, m *types.Map, expected map[string]interface{}) {
+	t.Helper()
+	for key, exp := range expected {
+		got := m.Get(key)
+		if !valueEqual(got, exp) {
+			t.Errorf("key %q: got %v (%T), want %v (%T)", key, got, got, exp, exp)
+		}
+	}
+	gotKeys := map[string]struct{}{}
+	m.Range(func(k string, _ any) bool {
+		gotKeys[k] = struct{}{}
+		return true
+	})
+	if len(gotKeys) != len(expected) {
+		t.Errorf("Map.Range visited %d live keys; want %d. seen=%v expected=%v",
+			len(gotKeys), len(expected), keysOf(gotKeys), keysOfStr(expected))
+	}
+	for k := range expected {
+		if _, ok := gotKeys[k]; !ok {
+			t.Errorf("expected key %q not visible in Map.Range", k)
+		}
+	}
+}
+
+func verifyArrayScenario(t *testing.T, a *types.Array, expected []interface{}) {
+	t.Helper()
+	gotLen := a.Len()
+	if gotLen != uint64(len(expected)) {
+		t.Errorf("Array.Len = %d, want %d", gotLen, len(expected))
+	}
+	got := a.ToSlice()
+	if len(got) != len(expected) {
+		t.Errorf("Array.ToSlice length = %d, want %d (got=%v expected=%v)",
+			len(got), len(expected), got, expected)
+		return
+	}
+	for i := range expected {
+		if !valueEqual(got[i], expected[i]) {
+			t.Errorf("Array[%d] = %v (%T), want %v (%T)", i, got[i], got[i], expected[i], expected[i])
+		}
 	}
 }
 
