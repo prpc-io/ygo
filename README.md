@@ -12,10 +12,11 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | `internal/block` (Item, Content, Branch, Splice, Integrate-YATA, TrySquash, Repair) | done; full YATA conflict resolution |
 | `internal/store` (BlockStore, ItemSlice, Materialize) | done |
 | `internal/doc` (Doc, Transaction, TransactionMut) | done; lock semantics + root-branch registry |
-| `internal/encoding` (StateVector, IdSet, Update encode/decode/apply) | done; JS Yjs → Go cross-language proven by 16 fixture scenarios (Map + Array) |
+| `internal/encoding` (StateVector, IdSet, Update encode/decode/apply) | done; JS Yjs → Go cross-language proven by 25 fixture scenarios (Map + Array + Text) |
+| `internal/utf16` (UTF-16 length / byte-offset / surrogate-aware split) | done |
 | `internal/types/Map` (Set / Get / Delete / Has / Len / Range / Clear) | done |
 | `internal/types/Array` (Insert / InsertRange / Push / Delete / Get / Len / Range / ToSlice) | done |
-| `internal/types/Text` | not started |
+| `internal/types/Text` plain-text (Insert / Delete / String / Length) | done; rich-text formatting deferred ([tech-debt](docs/tech-debt.md)) |
 | `internal/types/Xml*` | not started |
 | Persistence (`Store` interface + `modernc.org/sqlite` reference impl) | not started |
 | y-sync protocol (WebSocket framing) | not started |

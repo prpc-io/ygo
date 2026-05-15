@@ -98,6 +98,26 @@
 - **What:** Y.Array supports `move(srcIdx, dstIdx)` to relocate an element. yrs implements via the ContentMove variant; we do not encode/decode/integrate Move at all.
 - **When to address:** post-MVP per ROADMAP. Pre-conditions: ContentMove encode/decode in encoding layer, Move integration in Item.Integrate (deferred per integrate.md).
 
+### Text rich-text formatting not implemented
+
+- **Where:** missing on `internal/types/text.go`.
+- **What:** `Text.format(idx, len, attrs)`, `Text.applyDelta(delta)`, `Text.insertWithAttributes`, `Text.insertEmbed`, the ContentFormat marker emit/consume, and the Quill-compatible TextEvent.delta reconstruction. Per types-text.md §11 these are the entire rich-text surface.
+- **Impact today:** `Text.Insert` / `Text.Delete` / `Text.String` cover the plain-text path used by simple chat / pad / markdown-as-text scenarios; rich-text editors (Tiptap, ProseMirror) need the format API.
+- **When to address:** before adopters using rich-text editors come online. Will be a substantial commit (~600-1000 LOC) plus encoder/decoder coverage of `KindFormat` content.
+
+### Text.Range / Text iteration not implemented
+
+- **Where:** missing on `internal/types/text.go`.
+- **What:** Map and Array expose `Range(fn)`; Text only exposes `String()` for full read. A streaming `Text.Range(fn func(chunk string, attrs *Attrs) bool)` would let observers / encoders iterate per-Item segments without materializing the full string.
+- **When to address:** with rich-text formatting (rich-text Range yields chunks plus current attrs).
+
+### Text Insert / Delete walk text content twice on mid-block hit
+
+- **Where:** `internal/types/text.go` `findTextPosition`.
+- **What:** when index lands inside a String item we call `Content.Len(KindString)` (which calls `utf16.Length` → walks the string) AND, immediately after the split point check, `Store.SplitBlock` → `Item.Splice` → `Content.splitString` → `utf16.SplitAt` (which calls `utf16.ByteOffset` → walks again). Two O(N) walks per split.
+- **Why deferred:** premature; falls out of the broader storage-layout decision above.
+- **When to address:** with the storage layout benchmark.
+
 ## Encoding layer (V1 wire format)
 
 ### StateVector / IdSet have no JS Yjs cross-language byte-equality fixtures
@@ -161,13 +181,10 @@
 - **Why deferred:** requires Go test runner to exec a Node subprocess, pipe bytes via stdin/stdout or temp files, and parse JSON results. Not hard, but enough infrastructure that splitting from direction-one keeps each commit reviewable.
 - **When to address:** the next-likely real-world failure mode is a Hocuspocus-compat server scenario where JS clients download Go-encoded snapshots. Address before that lands.
 
-### Surrogate-pair split returns invalid UTF-16
+### Surrogate-pair split (resolved)
 
-- **Where:** `internal/block/content.go` `Content.Str` (Go `string`, currently no surrogate handling).
-- **What:** when a String item splits mid-surrogate-pair (a 4-byte UTF-8 character whose UTF-16 form is a high+low pair), each half should be replaced with U+FFFD per JS Yjs behaviour. yrs has commented-out code for this; we currently do nothing.
-- **Why deferred:** the failure mode only materializes once the Text shared type exposes splittable strings. Splittable string content right now stores plain Go strings; switch to `[]uint16` storage with the Text type lands and fix this then.
-- **When to address:** Text shared-type implementation (Days 25-28 per ROADMAP).
-- **Reference:** yrs/src/block.rs:1940-1948 (commented out — we do NOT want the no-op) and `yjs/src/structs/ContentString.js` for the JS behaviour we DO want.
+- **Was:** Content.splitString sliced by byte offset; mid-surrogate splits would emit invalid UTF-8.
+- **Resolved by:** new `internal/utf16` package with `Length`, `ByteOffset`, `SplitAt`. `Content.Len(KindString)` now returns UTF-16 code unit count via `utf16.Length` (matches yrs `Item::new` and JS Yjs Item.Len semantics, gotcha 1 from types-text.md). `Content.splitString` calls `utf16.SplitAt` which performs the JS Yjs U+FFFD replacement on mid-surrogate splits (yrs has the same code commented out at `block.rs:1940-1948`; we follow JS Yjs not yrs per types-text.md gotcha 3). Test `TestText_InsertSurrogateSplit_UsesU_FFFD` proves the behaviour.
 
 ### Wire info bit 4 reserved, no decoder check
 

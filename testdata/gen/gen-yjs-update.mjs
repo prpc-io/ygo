@@ -67,6 +67,28 @@ function captureArray(description, rootName, clientID, mutate) {
   };
 }
 
+// captureText is the text counterpart of captureMap / captureArray.
+// Y.Text's snapshot via toString() yields the live concatenated
+// plain text; we serialize that as expected_text. UTF-16 length
+// (matching JS string.length) is captured as expected_length so the
+// Go test verifies our utf16.Length helper agrees with JS.
+function captureText(description, rootName, clientID, mutate) {
+  const doc = new Y.Doc();
+  doc.clientID = clientID;
+  const text = doc.getText(rootName);
+  mutate(text, doc);
+  const bytes = Y.encodeStateAsUpdate(doc);
+  return {
+    description,
+    js_client_id: doc.clientID,
+    root_kind: "text",
+    root_name: rootName,
+    update_hex: Buffer.from(bytes).toString("hex"),
+    expected_text: text.toString(),
+    expected_length: text.length,
+  };
+}
+
 // Scenario clientIDs are arbitrary but stable. Picking distinct
 // values per scenario avoids any cross-scenario state leakage in
 // case the generator ever shares a doc.
@@ -150,6 +172,46 @@ const scenarios = [
     a.push(["b"]);
     a.push(["c"]);
     a.insert(2, ["X"]);
+  }),
+
+  // --- Text scenarios ----------------------------------------------------
+  captureText("empty Text, no ops", "x", 300, () => {}),
+
+  captureText("Text.insert simple ASCII", "x", 301, (t) => {
+    t.insert(0, "hello");
+  }),
+
+  captureText("Text two inserts at end", "x", 302, (t) => {
+    t.insert(0, "hello");
+    t.insert(5, " world");
+  }),
+
+  captureText("Text insert in middle (split)", "x", 303, (t) => {
+    t.insert(0, "helloworld");
+    t.insert(5, " ");
+  }),
+
+  captureText("Text delete single", "x", 304, (t) => {
+    t.insert(0, "hello");
+    t.delete(2, 1); // remove "l"
+  }),
+
+  captureText("Text delete range", "x", 305, (t) => {
+    t.insert(0, "hello world");
+    t.delete(5, 6); // remove " world"
+  }),
+
+  captureText("Text Cyrillic (BMP non-ASCII)", "x", 306, (t) => {
+    t.insert(0, "привет");
+  }),
+
+  captureText("Text emoji (non-BMP, surrogate pair)", "x", 307, (t) => {
+    t.insert(0, "a😀b");
+  }),
+
+  captureText("Text mixed ASCII + non-BMP + insert in middle", "x", 308, (t) => {
+    t.insert(0, "a😀c");
+    t.insert(1, "B"); // between a and 😀; idx in UTF-16 units
   }),
 ];
 

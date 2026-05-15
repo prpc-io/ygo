@@ -1,6 +1,10 @@
 package block
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/Deln0r/ygo/internal/utf16"
+)
 
 // ContentKind discriminates the variants of Content. The numeric values
 // are the Yjs wire ref numbers (BLOCK_ITEM_*_REF_NUMBER from
@@ -96,12 +100,12 @@ func (c Content) Len(_ OffsetKind) uint64 {
 	case KindJSON:
 		return uint64(len(c.JSONStrs))
 	case KindString:
-		// TODO(text): convert UTF-8 c.Str to UTF-16 code unit count.
-		// For ASCII-only inputs, len(c.Str) is correct. For non-BMP
-		// characters this overcounts; surrogate-pair-aware counting
-		// arrives with the Text type implementation. See block.md
-		// "Concrete Go translation choices" and open question 2.
-		return uint64(len(c.Str))
+		// UTF-16 code unit count, matching JS Yjs's Item.Len for
+		// String content (yrs/src/block.rs:1307 sets Item::new len
+		// via content.len(OffsetKind::Utf16); the wire format
+		// expects UTF-16 throughout). See
+		// docs/yrs-port-notes/types-text.md gotcha 1.
+		return utf16.Length(c.Str)
 	case KindBinary, KindEmbed, KindType, KindDoc:
 		return 1
 	case KindDeleted, KindSkip:
@@ -143,12 +147,19 @@ func (c *Content) Split(offset uint64) (Content, error) {
 }
 
 func (c *Content) splitString(offset uint64) (Content, error) {
-	if offset == 0 || offset >= uint64(len(c.Str)) {
-		return Content{}, fmt.Errorf("block: split offset %d out of range for string length %d", offset, len(c.Str))
+	// offset is in UTF-16 code units (matches JS Yjs / yrs
+	// SplittableString::block_offset). utf16.SplitAt does the
+	// UTF-8 byte boundary translation and replaces straddled
+	// surrogate pairs with U+FFFD per JS Yjs behaviour (yrs has
+	// the replacement commented out at block.rs:1940-1948 — we
+	// follow JS Yjs not yrs; see types-text.md gotcha 3).
+	totalU16 := utf16.Length(c.Str)
+	if offset == 0 || offset >= totalU16 {
+		return Content{}, fmt.Errorf("block: split offset %d out of range for string utf16-length %d", offset, totalU16)
 	}
-	right := Content{Kind: KindString, Str: c.Str[offset:]}
-	c.Str = c.Str[:offset]
-	return right, nil
+	left, right := utf16.SplitAt(c.Str, offset)
+	c.Str = left
+	return Content{Kind: KindString, Str: right}, nil
 }
 
 func (c *Content) splitAny(offset uint64) (Content, error) {

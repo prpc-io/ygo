@@ -18,13 +18,15 @@ type fixtureFile struct {
 }
 
 type fixtureScenario struct {
-	Description   string                 `json:"description"`
-	JsClientID    uint64                 `json:"js_client_id"`
-	RootKind      string                 `json:"root_kind"` // "map" or "array"; defaults to "map" for back-compat
-	RootName      string                 `json:"root_name"`
-	UpdateHex     string                 `json:"update_hex"`
-	ExpectedMap   map[string]interface{} `json:"expected_map,omitempty"`
-	ExpectedArray []interface{}          `json:"expected_array,omitempty"`
+	Description    string                 `json:"description"`
+	JsClientID     uint64                 `json:"js_client_id"`
+	RootKind       string                 `json:"root_kind"` // "map" / "array" / "text"; defaults to "map" for back-compat
+	RootName       string                 `json:"root_name"`
+	UpdateHex      string                 `json:"update_hex"`
+	ExpectedMap    map[string]interface{} `json:"expected_map,omitempty"`
+	ExpectedArray  []interface{}          `json:"expected_array,omitempty"`
+	ExpectedText   string                 `json:"expected_text,omitempty"`
+	ExpectedLength uint64                 `json:"expected_length,omitempty"`
 }
 
 // TestFixtures_DecodeApplyJSYjsUpdates is the binary-protocol-compat
@@ -94,6 +96,8 @@ func TestFixtures_DecodeApplyJSYjsUpdates(t *testing.T) {
 				verifyMapScenario(t, types.NewMap(branch), sc.ExpectedMap)
 			case "array":
 				verifyArrayScenario(t, types.NewArray(branch), sc.ExpectedArray)
+			case "text":
+				verifyTextScenario(t, types.NewText(branch), sc.ExpectedText, sc.ExpectedLength)
 			default:
 				t.Fatalf("unknown root_kind %q", rootKind)
 			}
@@ -141,6 +145,16 @@ func verifyArrayScenario(t *testing.T, a *types.Array, expected []interface{}) {
 		if !valueEqual(got[i], expected[i]) {
 			t.Errorf("Array[%d] = %v (%T), want %v (%T)", i, got[i], got[i], expected[i], expected[i])
 		}
+	}
+}
+
+func verifyTextScenario(t *testing.T, txt *types.Text, expectedStr string, expectedLength uint64) {
+	t.Helper()
+	if got := txt.String(); got != expectedStr {
+		t.Errorf("Text.String() = %q, want %q", got, expectedStr)
+	}
+	if got := txt.Length(); got != expectedLength {
+		t.Errorf("Text.Length() = %d, want %d (UTF-16 code units)", got, expectedLength)
 	}
 }
 
