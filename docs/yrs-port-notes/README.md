@@ -25,7 +25,7 @@ Per-layer working notes generated incrementally as each layer of the Rust [`yrs`
 | Map shared type | `yrs/src/types/map.rs` | [`types-map.md`](types-map.md) | done; shipped as `internal/types/` |
 | Array shared type | `yrs/src/types/array.rs` | `types-array.md` | not yet written |
 | Text shared type | `yrs/src/types/text.rs` | `types-text.md` | not yet written |
-| Update encoding (V1) | `yrs/src/update.rs`, encoder/decoder | `update-v1.md` | not yet written |
+| Update encoding (V1) | `yrs/src/update.rs`, encoder/decoder | [`update-v1.md`](update-v1.md) | partial; StateVector + IdSet shipped as `internal/encoding/`; Update encode/decode pending |
 | y-sync protocol | `yrs/src/sync/protocol.rs` | `protocol-sync.md` | not yet written |
 | Awareness | `yrs/src/sync/awareness.rs` | `protocol-awareness.md` | not yet written |
 

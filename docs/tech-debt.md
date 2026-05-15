@@ -79,6 +79,22 @@
 - **What:** `Len` iterates the entire `branch.Map` skipping tombstoned entries. yrs has a TODO at `map.rs:158` about caching live-count on the Branch; we'd inherit that optimization for free if/when Branch grows the cache.
 - **When to address:** if benchmarks show Len in hot paths.
 
+## Encoding layer (V1 wire format)
+
+### StateVector / IdSet have no JS Yjs cross-language byte-equality fixtures
+
+- **Where:** `internal/encoding/state_vector_test.go`, `idset_test.go` — only Go round-trip tests today.
+- **What:** lib0 fixtures pass byte-equality with JS lib0 directly. SV and IdSet encode call lib0 primitives, so the per-byte arithmetic is correct, but we have not run a JS-encodes / Go-decodes round-trip against actual JS Yjs output.
+- **Why this is a real gap, not a paranoia:** per `update-v1.md` gotcha 1, sort direction asymmetry is the easiest place to silently produce bytes JS Yjs rejects. Our determinism choice (sort ascending) matches yrs's BTreeMap iteration for IdSet but differs from JS Yjs's HashMap insertion order for StateVector. Decoding either way works (varuint-pair list is order-independent on read); encoding direction matters only for byte-equality, which is what fixtures would catch.
+- **When to address:** with the Update encode/decode commit. Once Update bytes round-trip against JS Yjs, SV and IdSet are exercised end-to-end through real wire updates and the gap closes naturally.
+
+### Update encode and decode not implemented
+
+- **Where:** missing files in `internal/encoding/`.
+- **What:** the V1 Update wire format (per-client block runs + embedded IdSet) is the actual user-visible payload that JS Yjs and Go ygo exchange. Without it there is no cross-language sync.
+- **Status:** scoped for the next commit (Phase B). Port note already shipped at `docs/yrs-port-notes/update-v1.md` covering encode + decode + the integrate-flow at the update level.
+- **Pre-conditions:** Item.Repair pass (parent fixup) must land before Update.decode → integrate works for items with Origin / RightOrigin pointing at not-yet-resolved IDs. Currently in tech-debt above.
+
 ### Surrogate-pair split returns invalid UTF-16
 
 - **Where:** `internal/block/content.go` `Content.Str` (Go `string`, currently no surrogate handling).

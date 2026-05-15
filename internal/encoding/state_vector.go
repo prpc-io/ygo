@@ -1,0 +1,62 @@
+package encoding
+
+import (
+	"sort"
+
+	"github.com/Deln0r/ygo/internal/lib0"
+	"github.com/Deln0r/ygo/internal/store"
+)
+
+// EncodeStateVector appends the V1 wire encoding of sv to buf and
+// returns the extended slice. Wire layout:
+//
+//	varuint clientCount
+//	clientCount × (varuint clientID, varuint clock)
+//
+// Clients are sorted ascending by clientID for deterministic output.
+// JS Yjs / yrs accept any order on decode; the canonical sort keeps
+// our round-trip byte-equality tests stable.
+//
+// Mirrors yrs StateVector::encode (state_vector.rs ~line 80).
+func EncodeStateVector(sv store.StateVector, buf []byte) []byte {
+	clients := make([]uint64, 0, len(sv))
+	for c := range sv {
+		clients = append(clients, c)
+	}
+	sort.Slice(clients, func(i, j int) bool { return clients[i] < clients[j] })
+
+	buf = lib0.WriteVarUint(buf, uint64(len(clients)))
+	for _, c := range clients {
+		buf = lib0.WriteVarUint(buf, c)
+		buf = lib0.WriteVarUint(buf, sv[c])
+	}
+	return buf
+}
+
+// DecodeStateVector parses a V1 wire-encoded StateVector from buf and
+// returns the StateVector plus the unconsumed tail.
+//
+// Mirrors yrs StateVector::decode (state_vector.rs ~line 100).
+func DecodeStateVector(buf []byte) (store.StateVector, []byte, error) {
+	count, n, err := lib0.ReadVarUint(buf)
+	if err != nil {
+		return nil, buf, err
+	}
+	buf = buf[n:]
+
+	sv := make(store.StateVector, count)
+	for i := uint64(0); i < count; i++ {
+		client, n, err := lib0.ReadVarUint(buf)
+		if err != nil {
+			return nil, buf, err
+		}
+		buf = buf[n:]
+		clock, n, err := lib0.ReadVarUint(buf)
+		if err != nil {
+			return nil, buf, err
+		}
+		buf = buf[n:]
+		sv[client] = clock
+	}
+	return sv, buf, nil
+}
