@@ -194,13 +194,12 @@
 - **When to address:** when implementing the V1 decoder.
 - **Action item at that time:** assert `info & 0b0001_0000 == 0` and return a versioning error if it's set; carry the failure into a fixture-based regression test.
 
-### ContentString storage layout not benchmarked
+### ContentString storage layout: O(N) UTF-16 walk per slice
 
-- **Where:** `internal/block/content.go` `Content.Str string`.
-- **What:** strings stored as Go `string` (UTF-8). Wire offsets are UTF-16. Slicing by UTF-16 offset on UTF-8 storage is O(N) per access. Two viable layouts for hot paths: `[]uint16` (memory cost, zero-cost slicing) or `string` plus a precomputed `[]uint16Index→byteIndex` table for blocks past N elements.
-- **Why deferred:** the right answer depends on B3 (text-heavy) benchmark numbers. Premature optimization without measurements is worse than the simple form.
-- **When to address:** after Text type is implemented and B3 from `dmonad/crdt-benchmarks` ports.
-- **Action item at that time:** measure both layouts on B3, pick the winner, update `docs/yrs-port-notes/block.md`.
+- **Where:** `internal/block/content.go` `Content.Str string`, `internal/utf16/utf16.go` `ByteOffset` / `SplitAt`.
+- **What:** strings stored as Go `string` (UTF-8). UTF-16 offset → byte offset translation walks chars on every call. Same O(N) cost yrs accepts (`SplittableString::block_offset` walks `chars()` per call). Two faster layouts when benchmarks demand: `[]uint16` storage (zero-cost slicing, memory cost) or precomputed `[]uint16Index→byteIndex` index for blocks past N units.
+- **Why deferred:** matches yrs's choice; cost is invisible until B3 (text-heavy) benchmarks land.
+- **When to address:** after `dmonad/crdt-benchmarks` B3 port shows text editing in hot path. Pair with the "Text Insert / Delete walks twice" entry below.
 
 ### Any type is a placeholder
 
