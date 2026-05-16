@@ -216,15 +216,19 @@ func TestApplyDelta_EmptyOps_NoOp(t *testing.T) {
 }
 
 func TestApplyDelta_CrossClient_Converges(t *testing.T) {
-	// A creates baseline, B applies an insert+format delta, A
-	// receives B's update — both converge. Avoid partial-item
-	// deletes because the DeleteSet apply path does not split
-	// items at range boundaries yet (see tech-debt.md "DeleteSet
-	// apply does not split items at boundaries").
+	// A creates baseline (single contiguous Item), B applies a
+	// compound delta that PARTIALLY deletes A's item plus inserts
+	// new content, A receives B's update — both converge.
+	//
+	// This test specifically stresses the DeleteSet split-on-
+	// boundary path: B's wire update carries a delete-set range
+	// covering clock 6..9 of A's client, but A's local view has
+	// a single 10-char Item at clock 0..9. The apply must split
+	// at the boundary, not tombstone the whole item.
 	a := doc.NewDocWithOptions(doc.Options{ClientID: 1109})
 	at := types.NewText(a.Branch("body"))
 	w := a.WriteTxn()
-	_ = at.Insert(w, 0, "Hello world")
+	_ = at.Insert(w, 0, "alpha beta")
 	w.Commit()
 
 	b := doc.NewDocWithOptions(doc.Options{ClientID: 1110})
@@ -234,9 +238,10 @@ func TestApplyDelta_CrossClient_Converges(t *testing.T) {
 	bt := types.NewText(b.Branch("body"))
 	w = b.WriteTxn()
 	if err := bt.ApplyDelta(w, []types.DeltaOp{
-		{Retain: 6, Attributes: types.Attrs{"bold": true}},
-		{Retain: 5, Attributes: types.Attrs{"italic": true}},
-		{Insert: "!", Attributes: types.Attrs{"bold": true}},
+		{Retain: 5, Attributes: types.Attrs{"bold": true}}, // format "alpha"
+		{Retain: 1}, // skip " "
+		{Delete: 4}, // delete "beta" (partial — A has 10-char item)
+		{Insert: "gamma", Attributes: types.Attrs{"italic": true}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -246,15 +251,15 @@ func TestApplyDelta_CrossClient_Converges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantString := "Hello world!"
+	wantString := "alpha gamma"
 	if got := at.String(); got != wantString {
-		t.Errorf("A String = %q, want %q", got, wantString)
+		t.Errorf("A String = %q, want %q (partial-delete split-on-boundary regression)", got, wantString)
 	}
 	if got := bt.String(); got != wantString {
 		t.Errorf("B String = %q, want %q", got, wantString)
 	}
 
-	// Both should agree on formatting.
+	// Both should agree on formatting after sync.
 	if !reflect.DeepEqual(at.ToDelta(), bt.ToDelta()) {
 		t.Errorf("deltas diverged:\n A=%+v\n B=%+v", at.ToDelta(), bt.ToDelta())
 	}

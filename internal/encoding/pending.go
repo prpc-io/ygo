@@ -280,29 +280,83 @@ func (p *Pending) Drain(txn *doc.TransactionMut) int {
 	}
 
 	// Delete-set pass: rebuild a per-client remaining list whose
-	// ranges still point at unseen IDs.
+	// ranges still point at unseen IDs. Each accepted range goes
+	// through applyDeleteRange which splits items at the range
+	// boundaries before tombstoning, so a wire delete-set that
+	// covers a SUBSET of an existing item's clocks tombstones only
+	// the matching middle slice instead of the whole item.
 	if p.DeleteSet != nil {
 		remaining := NewIdSet()
 		p.DeleteSet.Iterate(func(client uint64, ranges []Range) {
 			for _, r := range ranges {
-				clock := r.Start
-				end := r.End()
-				for clock < end {
-					cell, ok := bs.GetBlock(block.ID{Client: client, Clock: clock})
-					if !ok {
-						// Unseen — re-queue the rest of this range.
-						remaining.Insert(client, clock, end-clock)
-						break
-					}
-					if it := cell.AsItem(); it != nil && !it.IsDeleted() {
-						txn.Delete(it)
-						progress++
-					}
-					clock = cell.ClockEnd() + 1
+				deleted, leftover := applyDeleteRange(txn, client, r.Start, r.End())
+				progress += deleted
+				if leftover.Length > 0 {
+					remaining.Insert(client, leftover.Start, leftover.Length)
 				}
 			}
 		})
 		p.DeleteSet = remaining
 	}
 	return progress
+}
+
+// applyDeleteRange tombstones every live Item covering any clock
+// in [start, end) for the given client. Splits items at start /
+// end boundaries via txn.MaterializeCleanStart / MaterializeCleanEnd
+// so the deletion lands precisely on the range. Returns the count
+// of items actually tombstoned plus the leftover range that could
+// not be applied (because a clock was missing from the store —
+// caller should re-queue).
+//
+// Mirrors yrs Store::integrate_delete_set inner loop. Per
+// docs/tech-debt.md "DeleteSet apply does not split items at
+// range boundaries" — resolves the gap that broke cross-client
+// convergence when a peer's delete partially covers an item the
+// receiver has as a single contiguous block.
+func applyDeleteRange(txn *doc.TransactionMut, client, start, end uint64) (int, Range) {
+	bs := txn.Store()
+	deleted := 0
+	clock := start
+	for clock < end {
+		cell, ok := bs.GetBlock(block.ID{Client: client, Clock: clock})
+		if !ok {
+			// Unseen — re-queue from here.
+			return deleted, Range{Start: clock, Length: end - clock}
+		}
+		if cell.AsItem() == nil {
+			// GC cell — already tombstoned, just step past.
+			clock = cell.ClockEnd() + 1
+			continue
+		}
+
+		// Materialize an Item starting at exactly clock. If the
+		// existing cell begins before clock, this splits the cell
+		// and returns the right half. Then check if the item
+		// extends past end-1; if so, materialize a clean end to
+		// split off the unaffected tail. Re-fetch after split.
+		item := txn.MaterializeCleanStart(block.ID{Client: client, Clock: clock})
+		if item == nil {
+			// Shouldn't happen after GetBlock succeeded; defensive.
+			clock = cell.ClockEnd() + 1
+			continue
+		}
+		if item.ID.Clock+item.Len-1 >= end {
+			// Split at end-1 to keep our target item bounded.
+			_ = txn.MaterializeCleanEnd(block.ID{Client: client, Clock: end - 1})
+			// Re-fetch the item starting at clock — the split
+			// produced a new left half ending exactly at end-1.
+			item = txn.GetItem(block.ID{Client: client, Clock: clock})
+			if item == nil {
+				return deleted, Range{}
+			}
+		}
+
+		if !item.IsDeleted() {
+			txn.Delete(item)
+			deleted++
+		}
+		clock = item.ID.Clock + item.Len
+	}
+	return deleted, Range{}
 }

@@ -149,12 +149,10 @@
 - **Impact today:** Map.Set with primitive values round-trips. Map.Set with `[]any` arrays, `map[string]any` objects, or `[]byte` (use ContentBinary for binary instead) does not.
 - **When to address:** with the Array shared type (which forces full Any coverage end-to-end), or when a real adopter hits the limitation.
 
-### DeleteSet apply does not split items at range boundaries
+### DeleteSet split-on-boundary (resolved)
 
-- **Where:** `internal/encoding/update.go` `(*Update).Apply` delete-set loop + `internal/encoding/pending.go` `(*Pending).Drain` delete-set loop.
-- **What:** when a wire delete-set range covers a SUBSET of an existing item's clocks, the apply code calls `txn.Delete(it)` on the whole item rather than splitting at the range boundaries first. yrs handles this via `MaterializeCleanStart` / `MaterializeCleanEnd` before tombstoning. Without splits, a peer that received the un-split item and then a partial-delete range tombstones the entire item.
-- **Impact:** cross-client convergence breaks for the specific pattern "client A creates contiguous text; client B observes A; B uses `ApplyDelta` with a `Delete N` op that targets a sub-range of A's item; B sends the resulting wire update to A". A's local view loses MORE than B intended. `TestApplyDelta_CrossClient_Converges` was softened to use insert+format only to dodge this.
-- **When to address:** v0.2 hardening alongside the EncodeDiff slice-trim work — both touch the same `MaterializeClean*` paths. Implementation: before `txn.Delete(it)`, call `MaterializeCleanStart(ID{client, r.Start})` and `MaterializeCleanEnd(ID{client, r.End - 1})` to ensure the item boundaries align with the range, then delete only the materialized middle item(s).
+- **Was:** delete-set apply called `txn.Delete(it)` on the whole item when a wire range covered only a SUBSET of its clocks. Receivers of a partial-delete from a peer who had previously split an item lost MORE than the sender intended; cross-client convergence broke for any pattern where one side has a single contiguous item and the other ApplyDelta's a sub-range delete.
+- **Resolved by:** new `applyDeleteRange` helper in `internal/encoding/pending.go` calls `txn.MaterializeCleanStart` (splits at range start) and `txn.MaterializeCleanEnd` (splits at range end-1) before `txn.Delete`. The Drain loop routes every delete-set range through it. 4 dedicated regression tests in `internal/encoding/delete_split_test.go` cover split-at-start (preserve prefix), split-at-end (preserve suffix), split-at-both-ends (preserve prefix + suffix around middle delete), and whole-item degenerate case. `TestApplyDelta_CrossClient_Converges` re-enabled to the full insert+format+partial-delete+insert scenario and passes.
 
 ### Update.Apply does not handle Skip blocks
 
