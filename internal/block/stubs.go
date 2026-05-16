@@ -84,6 +84,15 @@ type Branch struct {
 	// format — Array's type-refs byte is 0. Constructors that build
 	// non-Array branches MUST set this explicitly.
 	TypeRef TypeRef
+
+	// Markers is the per-branch search-marker cache used by Array /
+	// Text position resolution to skip O(N) linked-list walks on
+	// hot edit paths. Allocated lazily (nil until the first marker
+	// goes in) so branches that never see large positional ops pay
+	// no overhead. See search_marker.go for the LRU semantics and
+	// docs/yrs-port-notes/types-array.md finding 1 + BENCHMARKS.md
+	// B4 entry for the workload that motivated this.
+	Markers *MarkerList
 }
 
 // Move records a move operation for movable list items. Defined when

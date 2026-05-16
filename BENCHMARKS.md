@@ -32,7 +32,33 @@ Each benchmark ID runs five sub-benchmarks:
 - `parse_v1` / `parse_v2` — time `ApplyUpdate` / `ApplyUpdateV2`
   on a fresh receiver doc against the encoded bytes.
 
-## Baseline (Apple M3, Go 1.26.3, `-benchtime=3x`, V2 step 4 build at `4341c20`)
+## Search-marker delta
+
+Before-and-after comparison for the search-marker rollout (post-V2
+baseline `cb5b210` → search-marker commit). Same hardware,
+`-benchtime=3x` for B1, `-benchtime=1x` for B4. "ops" sub-bench
+only (encode/parse paths unaffected by markers).
+
+| ID                              | Before (ms) | After (ms) | Change |
+|---------------------------------|------------:|-----------:|-------:|
+| B1.3  Prepend chars             |        0.75 |       1.19 |   +59% |
+| B1.4  Random insert chars       |       67.59 |      44.02 |   -35% |
+| B1.5  Random insert words       |      135.09 |      93.03 |   -31% |
+| B1.10 Prepend numbers           |        0.67 |       0.76 |   +13% |
+| B1.11 Random insert numbers     |       58.17 |      37.55 |   -35% |
+| B2.1  Concurrent insert at 0    |      732.57 |     726.18 |    -1% |
+| **B4  Real-world LaTeX trace**  |   **83,593**|  **10,540**| **-87%** |
+
+The B4 result is the headline — 8× speedup on the canonical
+real-world workload. Random-insert workloads improved 30-35%
+because the per-edit walk distance drops from O(N) to O(local
+delta from previous edit). Prepend-only workloads show small
+regressions (a few hundred ns/op) attributable to the marker
+bookkeeping overhead — prepends keep idx=0 so markers never get
+populated and the cost is pure overhead. Absolute numbers tiny;
+acceptable trade-off given the B4 win.
+
+## Baseline (Apple M3, Go 1.26.3, `-benchtime=3x`, post-search-marker build)
 
 All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
 
@@ -43,14 +69,14 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
 | B1.1  | Append N chars sequentially           |       72.77 |  35,880 |   6,036 |        0.11 |        0.34 |          1.20 |          1.19 |
 | B1.2  | Single insert of N-char string        |        0.06 |   6,013 |   6,026 |       0.001 |       0.006 |         0.007 |         0.020 |
 | B1.3  | Prepend N chars one-at-a-time         |        0.75 |  35,880 |   6,036 |        0.09 |        0.34 |          1.21 |          1.23 |
-| B1.4  | Insert N chars at random positions    |       67.59 |  52,753 |  29,486 |        0.12 |        0.50 |          2.22 |          2.32 |
-| B1.5  | Insert N words at random positions    |      135.09 | 138,396 | 102,408 |        0.33 |        5.93 |          4.01 |          3.91 |
+| B1.4  | Insert N chars at random positions    |       44.02 |  52,753 |  29,486 |        0.12 |        0.43 |          2.16 |          2.37 |
+| B1.5  | Insert N words at random positions    |       93.03 | 138,396 | 102,408 |        0.41 |        5.73 |          3.98 |          3.72 |
 | B1.6  | Insert N chars then delete all        |       72.56 |  35,885 |   6,041 |        0.15 |        0.47 |          1.70 |          1.73 |
 | B1.7  | Mixed insert/delete at random         |       45.85 |  38,686 |  20,505 |        0.12 |        0.36 |          1.64 |          1.54 |
 | B1.8  | Append N numbers to Array             |      113.84 |  47,816 |  17,970 |        0.12 |        0.14 |          1.42 |          1.84 |
 | B1.9  | Single insert of N-number Array       |        0.04 |  17,949 |  17,960 |        0.03 |        0.03 |         0.071 |         0.077 |
 | B1.10 | Prepend N numbers                     |        0.67 |  47,816 |  17,970 |        0.11 |        0.13 |          1.42 |          1.54 |
-| B1.11 | Insert N numbers at random positions  |       58.17 |  64,692 |  41,461 |        0.16 |        0.25 |          2.41 |          2.38 |
+| B1.11 | Insert N numbers at random positions  |       37.55 |  64,692 |  41,461 |        0.13 |        0.23 |          2.35 |          2.40 |
 
 ### B2 — Two-client concurrent workloads (N₂ = 3,000 ops per peer)
 
@@ -74,7 +100,7 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
 
 | ID | Workload                          |    ops (ms) |    V1 doc |   V2 doc | enc V1 (ms) | enc V2 (ms) | parse V1 (ms) | parse V2 (ms) |
 |----|-----------------------------------|------------:|----------:|---------:|------------:|------------:|--------------:|--------------:|
-| B4 | Real-world editing trace          |   83,593.28 | 1,974,942 |  226,824 |        7.67 |       98.35 |         71.68 |         64.43 |
+| B4 | Real-world editing trace          |   10,540.54 | 1,974,942 |  226,824 |        6.55 |       72.72 |         67.78 |         61.39 |
 
 ## Notes & observations
 
@@ -107,14 +133,11 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
   single Map.Set — only one block per merge, so the integrate cost
   stays sub-linear in client count.
 
-- **B4 op-throughput** is ~0.32 ms / edit (259,778 ops / 83.6 s).
-  yrs's published B4 numbers run faster (sub-10s on similar
-  hardware) thanks to search markers, which we deferred to
-  post-MVP (tracked in [docs/tech-debt.md](docs/tech-debt.md)
-  under "Array.findInsertPosition lacks search markers"). The
-  current numbers establish a baseline; closing the gap to
-  DESIGN.md's "within 2× of yrs" target is a separate optimization
-  workstream.
+- **B4 op-throughput** is ~0.041 ms / edit (259,778 ops / 10.5 s)
+  after search markers landed; was ~0.32 ms / edit on the pre-
+  marker baseline. yrs's published B4 numbers run sub-10s on
+  similar hardware — we are now within ~1.1× of yrs on this
+  workload, comfortably under DESIGN.md's "within 2× of yrs" target.
 
 ## Comparison with yrs
 

@@ -119,7 +119,10 @@ func (t *Text) Insert(txn *doc.TransactionMut, idx uint64, str string) error {
 	txn.Store().PushBlock(item)
 	if dropped := item.Integrate(txn, 0); dropped {
 		txn.Delete(item)
+		return nil
 	}
+	t.branch.Markers.ShiftAfter(idx, item.Len)
+	rememberMarker(t.branch, item, idx)
 	return nil
 }
 
@@ -140,6 +143,7 @@ func (t *Text) Delete(txn *doc.TransactionMut, idx, length uint64) error {
 	if length == 0 {
 		return nil
 	}
+	defer t.branch.Markers.ShrinkAfter(idx, length)
 
 	// Start split happens here: findTextPosition splits any String
 	// item that idx lands inside.
@@ -195,34 +199,49 @@ func (t *Text) Delete(txn *doc.TransactionMut, idx, length uint64) error {
 //   - idx == Length(): walk completes; returns (lastSeen, nil).
 //   - idx > Length(): caller should have rejected; returns clipped
 //     to end (lastSeen, nil) defensively.
+//
+// Search-marker fast path: same shape as Array's
+// findInsertPosition. Forward-only walks from the nearest marker
+// turn the B4 LaTeX-trace workload from O(N) per edit into
+// O(distance-from-cursor) per edit.
 func findTextPosition(branch *block.Branch, txn *doc.TransactionMut, idx uint64) (*block.Item, *block.Item, error) {
 	if idx == 0 {
 		return nil, branch.Start, nil
 	}
 
-	var counted uint64
-	var lastSeen *block.Item
-	for cur := branch.Start; cur != nil; cur = cur.Right {
+	startItem, startIdx := startFromMarker(branch, idx)
+	counted := startIdx
+	lastSeen := startItem
+	cur := startItem
+	if cur == nil {
+		cur = branch.Start
+	}
+	// Marker boundary case: see findInsertPosition. Without this
+	// guard a marker exactly at idx triggers a degenerate offset-0
+	// split inside cur.
+	if cur != nil && counted == idx {
+		return cur.Left, cur, nil
+	}
+	for ; cur != nil; cur = cur.Right {
 		lastSeen = cur
 		if cur.IsDeleted() {
 			continue
 		}
 		if cur.Content.Kind != block.KindString {
-			// Non-text content (Format / Embed / Type) does not
-			// consume Text cursor distance.
 			continue
 		}
 		contentLen := cur.Content.Len(block.OffsetUtf16)
 		if counted+contentLen == idx {
+			rememberMarker(branch, cur.Right, idx)
 			return cur, cur.Right, nil
 		}
 		if counted+contentLen > idx {
-			// idx lands inside cur. Split at UTF-16 offset.
 			splitOffset := idx - counted
 			right := txn.Store().SplitBlock(cur, splitOffset)
 			if right == nil {
 				return nil, nil, fmt.Errorf("text: mid-block split failed at offset %d in item %v", splitOffset, cur.ID)
 			}
+			rememberMarker(branch, right, idx)
 			return cur, right, nil
 		}
 		counted += contentLen

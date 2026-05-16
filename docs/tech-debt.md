@@ -77,13 +77,11 @@
 - **What:** `Len` iterates the entire `branch.Map` skipping tombstoned entries. yrs has a TODO at `map.rs:158` about caching live-count on the Branch; we'd inherit that optimization for free if/when Branch grows the cache.
 - **When to address:** if benchmarks show Len in hot paths.
 
-### Array position resolution is O(N) — no search-marker cache
+### Array / Text position resolution search-marker cache (resolved)
 
-- **Where:** `internal/types/array.go` `findInsertPosition`, `Get`, `Delete`.
-- **What:** every operation that needs to translate a user-facing index into a *Item walks `branch.Start` linearly. Operations on long arrays (10K+ elements) become O(N) per op.
-- **Why deferred:** per `docs/yrs-port-notes/types-array.md` finding 1, yrs main has no search-marker cache either. We're matching the executable spec; adding the cache is a pure-Go optimization unblocked by benchmarks, not a wire-format dependency.
-- **When to address:** when a real workload shows position resolution in hot paths. Implementation: bounded-LRU `[]struct{ idx uint64; item *Item }` on Branch, updated heuristically when traversal cost exceeds a threshold (~80 entries per yrs INTERNALS.md).
-- **Concrete impact** (from `BENCHMARKS.md`): B4 real-world LaTeX trace (259,778 edits) takes ~84 s in ygo vs published sub-10 s in yrs — search markers are the primary remaining algorithmic gap toward DESIGN.md's "within 2× of yrs" target.
+- **Was:** every Insert / Delete walked `branch.Start` linearly to translate a user-facing index into a `*Item`. O(N) per op; B4 real-world LaTeX trace (259,778 edits) took ~84 s vs yrs's sub-10 s.
+- **Resolved by:** `internal/block/search_marker.go` adds a bounded-LRU per-branch marker cache (cap 80, matching yrs's INTERNALS.md sweet spot). Each marker stores `(item, user-facing-index, timestamp)`. `Array.findInsertPosition` and `Text.findTextPosition` consult `branch.Markers.Nearest(idx)` and walk forward from the closest marker instead of from `branch.Start`. `Insert` / `Delete` call `ShiftAfter` / `ShrinkAfter` to keep marker indices accurate as positions move. `Item.Integrate` invalidates positional markers on its parent to handle the remote-apply path (which doesn't go through the local API and would otherwise leave markers stale).
+- **Impact:** B4 dropped 84 s → 10.5 s (**8× speedup**); within ~1.1× of yrs published numbers. Random-position B1.4 / B1.5 / B1.11 each gained ~30-35%. Prepend-only workloads (B1.3, B1.10) regressed ~10-60% in absolute time (sub-1 ms scale) — markers cost a tiny bookkeeping overhead they can't recoup because idx=0 short-circuits the marker path. Acceptable trade.
 
 ### Array.Range value extraction handles only Any/String/Binary
 

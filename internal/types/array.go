@@ -103,14 +103,22 @@ func (a *Array) InsertRange(txn *doc.TransactionMut, idx uint64, values []any) {
 	txn.Store().PushBlock(item)
 	if dropped := item.Integrate(txn, 0); dropped {
 		txn.Delete(item)
+		return
 	}
+	// Shift markers past the insertion point so they keep pointing
+	// at the right user-facing index.
+	a.branch.Markers.ShiftAfter(idx, item.Len)
+	// Remember the just-inserted item so the next call near idx
+	// short-circuits the walk.
+	rememberMarker(a.branch, item, idx)
 }
 
 // Get returns the value at idx, or nil if idx is out of range or
 // the underlying content kind is not unpacked by extractValueAt.
 //
-// O(N) over the linked list. Search-marker cache deferred (see
-// types-array.md finding 1).
+// O(N) over the linked list. Search markers help only when callers
+// alternate Get with Insert/Delete near the same area; pure Get
+// loops still walk from start (no marker write occurs here).
 func (a *Array) Get(idx uint64) any {
 	var counted uint64 = 0
 	for cur := a.branch.Start; cur != nil; cur = cur.Right {
@@ -142,6 +150,7 @@ func (a *Array) Delete(txn *doc.TransactionMut, idx, length uint64) {
 	if idx >= end {
 		return
 	}
+	defer a.branch.Markers.ShrinkAfter(idx, end-idx)
 
 	var counted uint64 = 0
 	cur := a.branch.Start
@@ -244,38 +253,95 @@ func (a *Array) ToSlice() []any {
 //
 // Per types-array.md finding 2: this is the eager-split flavour —
 // we split immediately rather than deferring via a rel cursor.
+//
+// Search-marker fast path: if branch.Markers has a marker whose
+// Index is closer to idx than the linear-from-start walk would
+// be, start the walk from that marker instead. Successful walks
+// add a fresh marker at the landing position to amortize the
+// cost across subsequent calls near the same area (the B4 trace
+// motivator).
 func findInsertPosition(branch *block.Branch, txn *doc.TransactionMut, idx uint64) (*block.Item, *block.Item) {
 	if idx == 0 {
 		return nil, branch.Start
 	}
 
-	var counted uint64 = 0
-	var lastSeen *block.Item
-	for cur := branch.Start; cur != nil; cur = cur.Right {
+	startItem, startIdx := startFromMarker(branch, idx)
+
+	counted := startIdx
+	lastSeen := startItem
+	cur := startItem
+	if cur == nil {
+		cur = branch.Start
+	}
+	// Marker boundary case: marker said "cur starts at counted" and
+	// caller wants idx == counted, so insert immediately before cur.
+	// Without this guard the walk falls into the
+	// `counted+cur.Len > idx` branch and tries to split cur at
+	// offset 0 — corrupts the linked list.
+	if cur != nil && counted == idx {
+		return cur.Left, cur
+	}
+	for ; cur != nil; cur = cur.Right {
 		lastSeen = cur
 		if cur.IsDeleted() || !cur.IsCountable() {
 			continue
 		}
 		if counted+cur.Len == idx {
-			// Boundary at the end of cur. Insert between cur and
-			// cur's immediate-list right neighbour.
+			rememberMarker(branch, cur.Right, idx)
 			return cur, cur.Right
 		}
 		if counted+cur.Len > idx {
-			// idx falls inside cur. Split.
 			splitOffset := idx - counted
 			right := txn.Store().SplitBlock(cur, splitOffset)
 			if right == nil {
-				// Defensive: shouldn't happen for valid offset.
 				return cur, cur.Right
 			}
+			rememberMarker(branch, right, idx)
 			return cur, right
 		}
 		counted += cur.Len
 	}
 
-	// Reached end without filling idx (idx >= Len). Append.
 	return lastSeen, nil
+}
+
+// startFromMarker picks the best starting point for a position
+// walk: either the nearest marker (if it's closer to idx than
+// branch.Start) or branch.Start itself. Returns the starting Item
+// and its known starting index.
+//
+// Backward walks (target idx < marker.Index) are skipped — the
+// shared types' walk loops are forward-only (cur = cur.Right).
+// Reverse-direction walking would need a separate Left-traversal
+// path that the current callers don't have; an opportunistic
+// future enhancement.
+func startFromMarker(branch *block.Branch, idx uint64) (*block.Item, uint64) {
+	if branch.Markers == nil {
+		return nil, 0
+	}
+	mk := branch.Markers.Nearest(idx)
+	if mk == nil || mk.Item == nil {
+		return nil, 0
+	}
+	// Forward-only: marker.Index must be <= idx and closer than 0.
+	if mk.Index > idx || mk.Index == 0 {
+		return nil, 0
+	}
+	branch.Markers.Touch(mk)
+	return mk.Item, mk.Index
+}
+
+// rememberMarker records the (item, idx) pair so the next call
+// with a target near idx can short-circuit the walk. Allocates
+// branch.Markers lazily.
+func rememberMarker(branch *block.Branch, item *block.Item, idx uint64) {
+	if item == nil || idx == 0 {
+		return
+	}
+	if branch.Markers == nil {
+		branch.Markers = block.NewMarkerList()
+	}
+	branch.Markers.Add(item, idx)
 }
 
 // extractValueAt returns the offset-th element of c. For

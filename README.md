@@ -29,7 +29,8 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | Go → JS reverse-direction wire fixture | done; `cmd/gen-go-fixtures` captures 21 V1 + 21 V2 scenarios (Map / Array / Text / XmlFragment); `testdata/gen/validate-go-fixtures.mjs` proves `Y.applyUpdate` / `Y.applyUpdateV2` accept Go-encoded bytes. All 42 pass; CI fixtures job re-runs on every push |
 | V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.EncodeV2` / `Update.DecodeV2` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; JS Yjs → Go V2 direction proven by 29 cross-language fixture scenarios (Map + Array + Text + RLE-flexing) against `yjs@13.6.20` `Y.encodeStateAsUpdateV2` |
 | Snapshots / undo manager / sub-documents | not started |
-| dmonad/crdt-benchmarks B1-B4 port | done; `benchmarks/` package implements B1.1-B1.11, B2.1-B2.4, B3.1/3/4 (B3.2 blocked on Any-TLV object support — tech-debt) and B4 (260k-edit real-world LaTeX trace). Baseline numbers in [BENCHMARKS.md](BENCHMARKS.md). V2 wire 6-8× smaller than V1 on RLE-friendly workloads; op-throughput gap vs yrs traced to search-marker absence |
+| dmonad/crdt-benchmarks B1-B4 port | done; `benchmarks/` package implements B1.1-B1.11, B2.1-B2.4, B3.1/3/4 (B3.2 blocked on Any-TLV object support — tech-debt) and B4 (260k-edit real-world LaTeX trace). Baseline numbers in [BENCHMARKS.md](BENCHMARKS.md). V2 wire 6-8× smaller than V1 on RLE-friendly workloads. After search markers landed, B4 op-throughput is within ~1.1× of yrs's published numbers (DESIGN.md "within 2×" target met) |
+| Array / Text search-marker cache | done; per-branch bounded-LRU cache (`internal/block/search_marker.go`) cuts B4 from 84 s → 10.5 s (8× speedup). Random-position workloads gain 30-35% |
 
 Roadmap and per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md).
 

@@ -260,6 +260,18 @@ func (i *Item) Integrate(ctx IntegrateContext, offset uint64) bool {
 	if parentDeleted || (i.ParentSub != nil && i.Right != nil) {
 		return true
 	}
+
+	// Positional inserts may have shifted user-facing indices in
+	// ways the per-branch search-marker cache can't describe (this
+	// path is taken by both local API mutations AND remote ApplyUpdate
+	// integrations; the API side has already-correct ShiftAfter
+	// hooks in Array.InsertRange / Text.Insert, but the apply side
+	// has no idea which markers to shift). Invalidate the cache; the
+	// API-side caller refills it with a single marker after Integrate
+	// returns, so within-txn locality (the B4 workload) still wins.
+	if i.ParentSub == nil {
+		parent.Markers.Invalidate()
+	}
 	return false
 }
 
