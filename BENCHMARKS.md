@@ -171,12 +171,17 @@ Notes:
   hardware is on the roadmap but not yet executed.
 - **ygo V1 doc size is bloated (~12× yjs's V1).** This is the
   visible effect of commit-time block squash being deferred
-  (see [tech-debt.md](docs/tech-debt.md) "Commit-time block
-  squash not yet wired"): every per-character Text.Insert in
-  the trace produces a separate `Item`, none of which get
-  merged with their same-client adjacent-clock neighbours at
-  commit. With squash wired, V1 size should drop to within
-  ~1-2× yjs's V1.
+  (see [tech-debt.md](docs/tech-debt.md) "Transaction commit
+  lifecycle"): every per-character Text.Insert in the trace
+  produces a separate `Item`, none of which get merged with
+  their same-client adjacent-clock neighbours at commit. The
+  fix is a paired pair of changes — commit-time squash itself
+  PLUS Apply-side partial-overlap handling (post-squash peers
+  emit blocks whose clock range partially overlaps what the
+  receiver already has, and the current Apply path can't
+  slice them). Both pieces are in the same grant-scope
+  milestone. With them shipped, V1 size should drop to
+  within ~1-2× yjs's V1.
 - **ygo V2 doc size is competitive (~1.4× yjs's V1).** V2's
   per-column RLE compression effectively dedupes the per-item
   overhead (constant clock deltas collapse via IntDiffOptRle),
