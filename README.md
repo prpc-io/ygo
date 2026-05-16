@@ -18,7 +18,7 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | `internal/types/Array` (Insert / InsertRange / Push / Delete / Get / Len / Range / ToSlice + InsertMap / InsertArray / InsertText) | done; nested-type construction supported |
 | `internal/types/Text` (Insert / Delete / String / Length + InsertWithAttributes / Format / InsertEmbed / Range / ToDelta) | done; rich-text formatting + embeds; ApplyDelta deferred ([tech-debt](docs/tech-debt.md)) |
 | Nested-type construction (Map-in-Map, Array-in-Map, etc., to arbitrary depth) | done; ContentType wire format + Repair ParentID resolution + pending-queue retry |
-| `internal/types/Xml*` (XmlFragment, XmlElement, XmlText) | not started; all prerequisites (nested-type construction + rich-text Text) now in place; remaining work is the wrapper API itself |
+| `internal/types/Xml*` (XmlFragment, XmlElement, XmlText) | done; ProseMirror/Tiptap/BlockNote unblocked. XmlHook (legacy) deferred. |
 | Persistence (`Store` interface + `modernc.org/sqlite` reference impl) | done; append-only update log, Flush compaction, LoadDoc / GetStateVector / GetDiff helpers; pure-Go (no CGO) |
 | y-sync protocol (`internal/sync`) | done; bare y-websocket subset (Sync + Awareness + QueryAwareness) — interoperates with y-websocket and the Sync subset of Hocuspocus clients; Auth + Stateless + Close + SyncStatus deferred to v0.2 |
 | Awareness (`internal/awareness`) | done; LWW presence map, JSON wire payload per y-protocols, self-eviction defense, SweepOutdated; cross-language JS y-protocols fixture deferred ([tech-debt](docs/tech-debt.md)) |

@@ -267,21 +267,13 @@
 - **Impact today:** none — `SweepOutdated` is documented; callers wrap it in a `time.Ticker` when they need it.
 - **When to address:** never, unless ergonomics complaints arrive. Background goroutines inside passive data structures violate the "no surprise lifecycle" Go convention.
 
-## XML types (XmlFragment, XmlElement, XmlText, XmlHook)
+## XML types (mostly resolved)
 
-### Not started; depends on a multi-layer prerequisite chain
+### Resolved: XmlFragment / XmlElement / XmlText shipped
 
-- **Where:** missing `internal/types/xml_fragment.go`, `xml_element.go`, `xml_text.go`; missing wire-format support for the XML sub-kinds in `internal/encoding/content_codec.go`.
-- **What:** Yjs XML types model DOM-style trees used by ProseMirror, Tiptap, BlockNote, and other rich-text editors. `XmlFragment` is a root container (Array-like) of child nodes; `XmlElement` carries a `nodeName` plus an attribute map (Map-like) plus children (Array-like); `XmlText` is `Text` with formatting markers and can be a child of `XmlElement`. `XmlHook` embeds an arbitrary opaque value and is JS-legacy (post-MVP per yrs).
-- **Wire format additions still needed:**
-  1. Extend `ContentType` encoder/decoder to emit/parse the `varstring(nodeName)` after the type-refs byte for XML element / hook variants — already wired for `TypeRefXmlElement` (3) and `TypeRefXmlHook` (5) in `internal/encoding/content_codec.go`, but no callers yet build XML branches with `Name` set.
-- **Prerequisite chain (remaining):**
-  1. ~~**Nested-type construction**~~ — **done**.
-  2. ~~**Rich-text formatting on Text** (KindFormat + KindEmbed encode/decode + Text.Format / InsertWithAttributes / InsertEmbed / Range / ToDelta)~~ — **done**. XmlText reuses the same machinery.
-  3. **XML types themselves** — `XmlFragment`, `XmlElement`, `XmlText` wrappers (~400-600 LOC). XmlElement.GetAttribute / SetAttribute / RemoveAttribute reuse Map machinery on the attribute sub-branch; child management reuses Array machinery on the children sub-branch. The wire-format machinery is already in place; this is purely the user-facing API layer.
-- **Total estimated effort remaining:** ~400-600 LOC in a single commit.
-- **When to address:** v1.0 milestone. With both prerequisites in place, this is now the smallest remaining gap blocking ProseMirror / Tiptap / BlockNote adoption.
-- **Acknowledgement:** XML support is the gateway to the ~80% of Yjs JavaScript adoption that uses it for collaborative document editors. Shipping it unlocks the largest adoption pool in one move; until then ygo is suitable for Map / Array / Text (plain + rich) / nested-Map+Array+Text workloads only.
+- **Was:** missing XML wrapper layer; ProseMirror / Tiptap / BlockNote unusable as JS clients against a ygo server.
+- **Resolved by:** `internal/types/xml.go` ships `XmlFragment`, `XmlElement`, `XmlText` wrappers. XmlElement carries nodeName + attributes (Map-like via `branch.Map`) + positional children (Array-like via `branch.Start`); XmlText embeds the regular Text wrapper to inherit all rich-text methods. ToString renderers produce HTML-like output with sorted attribute keys. 11 tests cover Element/Attribute/RemoveAttribute, nested DOM round-trip, self-closing render for empty elements, rich-text inside XmlText, wire round-trip preserves structure, cross-client structural-edit convergence, Range over children. The wire-format machinery (`ContentType` with optional nodeName) was already in place from the nested-type commit.
+- **Remaining:** `XmlHook` (legacy JS Yjs embed type carrying an arbitrary opaque value) is deferred — yrs marks it as legacy too. No adopter has asked.
 
 ## Persistence layer
 
