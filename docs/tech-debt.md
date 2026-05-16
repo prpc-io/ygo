@@ -96,11 +96,10 @@
 - **What:** Y.Array supports `move(srcIdx, dstIdx)` to relocate an element. yrs implements via the ContentMove variant; we do not encode/decode/integrate Move at all.
 - **When to address:** post-MVP per ROADMAP. Pre-conditions: ContentMove encode/decode in encoding layer, Move integration in Item.Integrate (deferred per integrate.md).
 
-### Text rich-text formatting (mostly resolved)
+### Text rich-text formatting (resolved)
 
 - **Was:** Text supported only plain-text Insert/Delete/String/Length. No format markers, no embeds, no Quill-style delta API.
-- **Resolved by:** `internal/types/text_format.go` ships `Text.InsertWithAttributes(idx, str, attrs)`, `Text.Format(idx, len, attrs)`, `Text.InsertEmbed(idx, value)`, `Text.Range(fn)`, `Text.ToDelta()`. KindFormat and KindEmbed encode/decode wired into `internal/encoding/content_codec.go`. Tests cover open/close markers, format on existing range, attribute-clearing, embeds in delta, cross-client convergence of formatting.
-- **Remaining:** `Text.ApplyDelta(delta []DeltaOp)` — the Quill batch-mutation API. Not strictly needed for adopters who call the underlying methods directly (Insert / Format / InsertEmbed), but ProseMirror / Tiptap bindings convert their internal change descriptions to Yjs via ApplyDelta. Estimated ~150-250 LOC plus tests; track for v0.2.
+- **Resolved by:** `internal/types/text_format.go` ships `Text.InsertWithAttributes(idx, str, attrs)`, `Text.Format(idx, len, attrs)`, `Text.InsertEmbed(idx, value)`, `Text.Range(fn)`, `Text.ToDelta()`, `Text.ApplyDelta(ops)`. KindFormat and KindEmbed wire format wired into `internal/encoding/content_codec.go` (note: both use `writeJSON = varstring(JSON.stringify(v))` per yjs UpdateEncoder.js, NOT lib0 Any). Tests cover open/close markers, format on existing range, attribute-clearing, embeds in delta, cross-client convergence, ApplyDelta dispatch over insert/retain/delete/embed/attrs, ToDelta→ApplyDelta round-trip.
 
 ### Text.Range / Text iteration not implemented
 
@@ -149,6 +148,13 @@
 - **What:** `EncodeAny` and `DecodeAny` cover null/undefined, bool, string, int (≤ 31 bits), int64-or-larger-as-float64, float64. Tags 116 (binary), 117 (array), 118 (object), 122 (bigint), 124 (float32) are unsupported — DecodeAny returns `ErrUnsupportedAnyTag`; EncodeAny panics for the corresponding Go types.
 - **Impact today:** Map.Set with primitive values round-trips. Map.Set with `[]any` arrays, `map[string]any` objects, or `[]byte` (use ContentBinary for binary instead) does not.
 - **When to address:** with the Array shared type (which forces full Any coverage end-to-end), or when a real adopter hits the limitation.
+
+### DeleteSet apply does not split items at range boundaries
+
+- **Where:** `internal/encoding/update.go` `(*Update).Apply` delete-set loop + `internal/encoding/pending.go` `(*Pending).Drain` delete-set loop.
+- **What:** when a wire delete-set range covers a SUBSET of an existing item's clocks, the apply code calls `txn.Delete(it)` on the whole item rather than splitting at the range boundaries first. yrs handles this via `MaterializeCleanStart` / `MaterializeCleanEnd` before tombstoning. Without splits, a peer that received the un-split item and then a partial-delete range tombstones the entire item.
+- **Impact:** cross-client convergence breaks for the specific pattern "client A creates contiguous text; client B observes A; B uses `ApplyDelta` with a `Delete N` op that targets a sub-range of A's item; B sends the resulting wire update to A". A's local view loses MORE than B intended. `TestApplyDelta_CrossClient_Converges` was softened to use insert+format only to dodge this.
+- **When to address:** v0.2 hardening alongside the EncodeDiff slice-trim work — both touch the same `MaterializeClean*` paths. Implementation: before `txn.Delete(it)`, call `MaterializeCleanStart(ID{client, r.Start})` and `MaterializeCleanEnd(ID{client, r.End - 1})` to ensure the item boundaries align with the range, then delete only the materialized middle item(s).
 
 ### Update.Apply does not handle Skip blocks
 

@@ -315,6 +315,63 @@ func (t *Text) Range(fn func(kind ChunkKind, value any, attrs Attrs) bool) {
 	}
 }
 
+// ApplyDelta walks ops in order and dispatches each to the
+// appropriate primitive (InsertWithAttributes / InsertEmbed /
+// Format / Delete) while maintaining a cursor through the text.
+//
+// Op semantics (mirrors JS Y.Text.applyDelta from
+// testdata/gen/node_modules/yjs/src/types/YText.js):
+//
+//   - Insert string with optional Attributes — insert text at
+//     cursor, advance cursor by len(text)
+//   - Insert non-string (Embed) — insert single embed at cursor,
+//     advance cursor by 1
+//   - Retain N with optional Attributes — if Attributes is non-nil,
+//     apply Format(cursor, N, Attributes); advance cursor by N
+//   - Delete N — delete N units at cursor; cursor unchanged
+//     (the text shifts left under the cursor)
+//
+// All ops execute inside the supplied txn so the entire delta is
+// atomic from peers' perspective. Errors abort mid-delta — the
+// txn caller must decide whether to commit the partial result or
+// roll back (the doc layer's TransactionMut has no Rollback, so
+// the partial mutation persists; this mirrors yrs's behaviour).
+//
+// Per docs/yrs-port-notes/types-text-rich.md §7. Empty ops slice
+// is a no-op; nil ops also a no-op.
+func (t *Text) ApplyDelta(txn *doc.TransactionMut, ops []DeltaOp) error {
+	var cursor uint64
+	for i, op := range ops {
+		switch {
+		case op.Insert != "":
+			if err := t.InsertWithAttributes(txn, cursor, op.Insert, op.Attributes); err != nil {
+				return fmt.Errorf("ApplyDelta op[%d] insert: %w", i, err)
+			}
+			cursor += utf16.Length(op.Insert)
+		case op.Embed != nil:
+			if err := t.InsertEmbed(txn, cursor, op.Embed); err != nil {
+				return fmt.Errorf("ApplyDelta op[%d] embed: %w", i, err)
+			}
+			cursor++
+		case op.Retain > 0:
+			if op.Attributes != nil {
+				if err := t.Format(txn, cursor, op.Retain, op.Attributes); err != nil {
+					return fmt.Errorf("ApplyDelta op[%d] retain+format: %w", i, err)
+				}
+			}
+			cursor += op.Retain
+		case op.Delete > 0:
+			if err := t.Delete(txn, cursor, op.Delete); err != nil {
+				return fmt.Errorf("ApplyDelta op[%d] delete: %w", i, err)
+			}
+			// cursor unchanged — text shifts left under cursor
+		default:
+			// All-zero op (or a Retain == 0 with nil attrs) is a no-op.
+		}
+	}
+	return nil
+}
+
 // ToDelta returns the Quill-style delta representation of the doc.
 // Adjacent same-attribute string chunks are coalesced into single
 // insert ops. Embeds appear as separate ops.
