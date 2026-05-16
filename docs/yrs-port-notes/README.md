@@ -28,6 +28,7 @@ Per-layer working notes generated incrementally as each layer of the Rust [`yrs`
 | Update encoding (V1) | `yrs/src/update.rs`, encoder/decoder | [`update-v1.md`](update-v1.md) | done; JS Yjs → Go direction proven by 8 fixture scenarios; Go → JS reverse direction tracked in tech-debt |
 | y-sync protocol | `y-protocols/sync.js` + Hocuspocus envelope | [`protocol-sync.md`](protocol-sync.md) | done; reference for implementation |
 | Awareness | `yrs/src/sync/awareness.rs` + `y-protocols/awareness.js` | [`awareness.md`](awareness.md) | done; reference for implementation |
+| Nested-type construction | `yrs/src/block.rs:1368-1431` + `yjs/src/structs/ContentType.js` | [`nested-types.md`](nested-types.md) | done; reference for implementation |
 
 ## Why per-layer rather than monolithic
 
