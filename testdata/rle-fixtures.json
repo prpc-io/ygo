@@ -1,0 +1,272 @@
+[
+  {
+    "primitive": "rle",
+    "description": "single value",
+    "values": [
+      42
+    ],
+    "bytes_hex": "2a"
+  },
+  {
+    "primitive": "rle",
+    "description": "long run of 100 sevens",
+    "values": [
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7
+    ],
+    "bytes_hex": "07"
+  },
+  {
+    "primitive": "rle",
+    "description": "alternating 1 and 2",
+    "values": [
+      1,
+      2,
+      1,
+      2,
+      1,
+      2
+    ],
+    "bytes_hex": "0100020001000200010002"
+  },
+  {
+    "primitive": "rle",
+    "description": "zeros only",
+    "values": [
+      0,
+      0,
+      0
+    ],
+    "bytes_hex": "00"
+  },
+  {
+    "primitive": "uint-opt-rle",
+    "description": "single value 42",
+    "values": [
+      42
+    ],
+    "bytes_hex": "2a"
+  },
+  {
+    "primitive": "uint-opt-rle",
+    "description": "run of three fives",
+    "values": [
+      5,
+      5,
+      5
+    ],
+    "bytes_hex": "4501"
+  },
+  {
+    "primitive": "uint-opt-rle",
+    "description": "singles then run [1,2,3,3,3]",
+    "values": [
+      1,
+      2,
+      3,
+      3,
+      3
+    ],
+    "bytes_hex": "01024301"
+  },
+  {
+    "primitive": "uint-opt-rle",
+    "description": "zeros only (negative-zero edge case)",
+    "values": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "bytes_hex": "4003"
+  },
+  {
+    "primitive": "uint-opt-rle",
+    "description": "large value (1<<20)",
+    "values": [
+      1048576,
+      1048576
+    ],
+    "bytes_hex": "c080800100"
+  },
+  {
+    "primitive": "int-diff-opt-rle",
+    "description": "monotonic increment +1",
+    "values": [
+      10,
+      11,
+      12,
+      13,
+      14
+    ],
+    "bytes_hex": "140302"
+  },
+  {
+    "primitive": "int-diff-opt-rle",
+    "description": "mixed deltas",
+    "values": [
+      3,
+      1100,
+      1101,
+      1050,
+      0
+    ],
+    "bytes_hex": "06922202e601f420"
+  },
+  {
+    "primitive": "int-diff-opt-rle",
+    "description": "negative deltas (decrement -10)",
+    "values": [
+      100,
+      90,
+      80,
+      70,
+      60
+    ],
+    "bytes_hex": "88035302"
+  },
+  {
+    "primitive": "int-diff-opt-rle",
+    "description": "zero delta run (same value)",
+    "values": [
+      42,
+      42,
+      42,
+      42,
+      42
+    ],
+    "bytes_hex": "94010102"
+  },
+  {
+    "primitive": "string",
+    "description": "five short strings",
+    "values": [
+      "hello",
+      "world",
+      "foo",
+      "bar",
+      "baz"
+    ],
+    "bytes_hex": "1368656c6c6f776f726c64666f6f62617262617a45004301"
+  },
+  {
+    "primitive": "string",
+    "description": "with empty strings",
+    "values": [
+      "",
+      "a",
+      "",
+      "bc"
+    ],
+    "bytes_hex": "0361626300010002"
+  },
+  {
+    "primitive": "string",
+    "description": "long string triggers staging",
+    "values": [
+      "abcdefghijklmnopqrstuvwxyz",
+      "short",
+      "another moderately long string here"
+    ],
+    "bytes_hex": "426162636465666768696a6b6c6d6e6f707172737475767778797a73686f7274616e6f74686572206d6f6465726174656c79206c6f6e6720737472696e6720686572651a0523"
+  }
+]

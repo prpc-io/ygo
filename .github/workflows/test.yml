@@ -75,6 +75,9 @@ jobs:
       - name: regenerate xml fixtures
         working-directory: testdata/gen
         run: node gen-xml.mjs
+      - name: regenerate RLE fixtures
+        working-directory: testdata/gen
+        run: node gen-rle.mjs
       - name: verify no diff
         run: git diff --exit-code testdata/
       - name: run go tests against fixtures
