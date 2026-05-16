@@ -105,15 +105,13 @@ func EncodeDiff(d *doc.Doc, txn *doc.Transaction, remoteSV store.StateVector) []
 	buf := lib0.WriteVarUint(nil, uint64(len(diff)))
 	for _, run := range diff {
 		clientList := bs.GetClient(run.client)
-		// Emit all cells from index 0 (full-client fallback per
-		// docstring above); the SV-clamped form will land with the
-		// slice-aware EncodeDiff in a follow-up commit.
-		_ = run.startClock // intentionally unused in this pass
-		buf = lib0.WriteVarUint(buf, uint64(clientList.Len()))
+		startIdx := firstUnknownCell(clientList, run.startClock)
+		count := clientList.Len() - startIdx
+		buf = lib0.WriteVarUint(buf, uint64(count))
 		buf = lib0.WriteVarUint(buf, run.client)
-		first, _ := clientList.Get(0)
+		first, _ := clientList.Get(startIdx)
 		buf = lib0.WriteVarUint(buf, first.ClockStart())
-		for i := 0; i < clientList.Len(); i++ {
+		for i := startIdx; i < clientList.Len(); i++ {
 			cell, _ := clientList.Get(i)
 			buf = encodeCell(buf, cell)
 		}
@@ -124,6 +122,41 @@ func EncodeDiff(d *doc.Doc, txn *doc.Transaction, remoteSV store.StateVector) []
 	buf = ds.Encode(buf)
 
 	return buf
+}
+
+// firstUnknownCell returns the index of the first cell in clientList
+// whose clock range contains at least one clock the remote does not
+// yet have. remoteClock follows state-vector semantics: it is the
+// exclusive upper bound of the remote's known range, i.e. the remote
+// has clocks [0, remoteClock). ClockEnd is inclusive.
+//
+// A cell is fully known to the remote iff cell.ClockEnd() <
+// remoteClock. Cells that straddle remoteClock (ClockStart <
+// remoteClock <= ClockEnd) are emitted whole; the receiver's
+// integrate path silently rejects per-Item duplicates via the
+// state-vector check, so the redundancy costs bandwidth but not
+// correctness. Per-cell partial trim (split at remoteClock, emit
+// only the right half) would match yrs's wire-byte output exactly
+// for the straddling case; deferred — tracked in
+// docs/tech-debt.md.
+//
+// Returns 0 if remoteClock is 0 (the remote has nothing for this
+// client; full emission). Returns clientList.Len() if every cell
+// is already known to the remote (no emission needed; caller
+// should have filtered the client out of `diff` upstream, this is
+// a defensive zero-block fallback).
+func firstUnknownCell(clientList *store.ClientBlockList, remoteClock uint64) int {
+	if remoteClock == 0 {
+		return 0
+	}
+	n := clientList.Len()
+	for i := 0; i < n; i++ {
+		cell, _ := clientList.Get(i)
+		if cell.ClockEnd() >= remoteClock {
+			return i
+		}
+	}
+	return n
 }
 
 // encodeCell writes one cell's wire record (info byte + conditional

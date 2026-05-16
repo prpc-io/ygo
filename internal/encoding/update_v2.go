@@ -86,12 +86,13 @@ func EncodeDiffV2(d *doc.Doc, txn *doc.Transaction, remoteSV store.StateVector) 
 	enc.WriteVarUint(uint64(len(diff)))
 	for _, run := range diff {
 		clientList := bs.GetClient(run.client)
-		enc.WriteVarUint(uint64(clientList.Len()))
+		startIdx := firstUnknownCell(clientList, run.startClock)
+		count := clientList.Len() - startIdx
+		enc.WriteVarUint(uint64(count))
 		enc.WriteClient(run.client)
-		first, _ := clientList.Get(0)
+		first, _ := clientList.Get(startIdx)
 		enc.WriteVarUint(first.ClockStart())
-		_ = run.startClock // first-block trim deferred (parity with V1)
-		for i := 0; i < clientList.Len(); i++ {
+		for i := startIdx; i < clientList.Len(); i++ {
 			cell, _ := clientList.Get(i)
 			encodeCellV2(enc, cell)
 		}

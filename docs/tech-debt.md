@@ -124,11 +124,11 @@
 
 ### Update encode / decode partial — full client list, no slicing at SV boundary
 
-- **Where:** `internal/encoding/update.go` `EncodeDiff`.
-- **What:** the V1 Update wire format and Apply pipeline now work end-to-end in pure Go (encode → decode → apply produces converged Map state, verified by TestUpdate_TwoDocConvergence_*). What's still simplified vs yrs:
-  - **No SV-boundary slicing on the first block of each client run.** yrs's `Store::write_blocks_from` calls `find_pivot(remoteClock)` then trims the first block via `ItemSlice::encode` with a partial start. We emit the entire client list. Wire is still valid; receivers integrate items they already have as no-ops (Contains check). Cost: redundant bytes proportional to remote-known prefix length.
-  - **No partial-block origin override.** Per `update-v1.md` gotcha 4, sliced items must synthesize Origin = `(client, clock+start-1)`. Without slicing we don't trigger this; the gotcha returns when EncodeDiff gains slice-trim.
-- **When to address:** when network-bandwidth-driven sync becomes a real cost (multi-MB docs over slow links). Pure-correctness test pipeline already passes.
+- **Where:** `internal/encoding/update.go` `EncodeDiff`, `internal/encoding/update_v2.go` `EncodeDiffV2`.
+- **What's done:** whole-cell skip via `firstUnknownCell` — for every per-client run, cells fully covered by `remoteClock` (i.e., `cell.ClockEnd() < remoteClock`) are dropped before emission. The "block count" header is recomputed against the trimmed range, and the "clock start" header points at the first emitted cell. Tests in `internal/encoding/diff_trim_test.go` verify diff < full and end-state convergence. Both V1 and V2 paths share the helper. Empty remote SV unchanged (no trim) so bytes are byte-identical to `EncodeStateAsUpdate`.
+- **What's still simplified vs yrs:**
+  - **No partial-cell trim on the boundary cell.** When `remoteClock` falls strictly inside a cell's range (ClockStart < remoteClock <= ClockEnd), we emit the whole cell. yrs splits at `remoteClock` and emits only the right half, using a synthesized `origin = (client, remoteClock - 1)` per `update-v1.md` gotcha 4. Wire is still valid (integrate de-dups), redundancy is at most one cell's worth per per-client run.
+- **When to address:** the partial-cell trim closes the last bandwidth gap vs yrs and produces byte-identical wire output for the straddling case (useful if a future fixture demands byte-equality with `Y.encodeStateAsUpdate` against a non-empty SV). Low priority — whole-cell skip captures 90%+ of the bandwidth saving for typical sync patterns.
 
 ### Item.Repair ParentID (resolved)
 
