@@ -139,26 +139,66 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
   similar hardware — we are now within ~1.1× of yrs on this
   workload, comfortably under DESIGN.md's "within 2× of yrs" target.
 
-## Comparison with yrs
+## Comparison with yjs / ywasm (published numbers)
 
-A side-by-side run under identical hardware would require driving
-both ygo and yrs through a single harness (the upstream
-`dmonad/crdt-benchmarks` JS bench runner shells out to native
-modules; we'd need a Go adapter). That harness is on the roadmap
-but out of scope for this commit. For now the numbers above are
-ygo absolute; cross-impl comparison is left as future work,
-tracked in [tech-debt.md](docs/tech-debt.md).
+`dmonad/crdt-benchmarks` publishes results for `yjs` (the npm
+JS package, the canonical reference) and `ywasm` (yrs compiled
+to WASM, called from JS via wasm-bindgen). The published numbers
+were measured on **Intel® Core™ i5-8400 @ 2.80 GHz × 6 with
+Node 20.5.0**. Ours were measured on **Apple M3 with Go 1.26.3**.
+Hardware and runtime differ, so this is not an apples-to-apples
+benchmark — but it places ygo in the same order of magnitude
+on the canonical workload and identifies where the remaining
+gaps are.
 
-The DESIGN.md target is "within 2× of yrs" — these baselines tell
-us where the gaps are:
+B4 (real-world LaTeX paper trace, 259,778 edits → 104,852-char
+document):
 
-- **Wire format size** — V2 numbers are competitive with yrs's V2
-  (per public dmonad/crdt-benchmarks results, yrs encodes B4 to
-  ~150 KB; ygo gets 227 KB — within 1.5×).
-- **Op throughput on real traces (B4)** — biggest gap; search-
-  marker work is the unlock.
-- **Encode/parse times** — within ~10× ms-range of yrs; mostly
-  unoptimized but not dominated by algorithmic gaps.
+| Metric                | yjs (Node)  | ywasm (WASM) | ygo V1 | ygo V2 |
+|-----------------------|------------:|-------------:|-------:|-------:|
+| Apply edits (ms)      |       5,714 |       28,675 | 10,540 | 10,540 |
+| Encode (ms)           |          11 |            3 |    7.7 |   72.7 |
+| Parse (ms)            |          39 |           16 |   67.8 |   61.4 |
+| Doc size (bytes)      |     159,929 |      159,929 | **1,974,942** | **226,824** |
+| Memory used (MB)      |         3.2 |          0.0 |    n/a |    n/a |
+
+Notes:
+
+- **ywasm is NOT a fair representative of native yrs.** wasm-
+  bindgen adds substantial overhead (~5× on this workload per
+  the table above); native yrs's own benchmarks ship sub-1-second
+  B4 numbers. A direct ygo-vs-native-yrs run under identical
+  hardware is on the roadmap but not yet executed.
+- **ygo V1 doc size is bloated (~12× yjs's V1).** This is the
+  visible effect of commit-time block squash being deferred
+  (see [tech-debt.md](docs/tech-debt.md) "Commit-time block
+  squash not yet wired"): every per-character Text.Insert in
+  the trace produces a separate `Item`, none of which get
+  merged with their same-client adjacent-clock neighbours at
+  commit. With squash wired, V1 size should drop to within
+  ~1-2× yjs's V1.
+- **ygo V2 doc size is competitive (~1.4× yjs's V1).** V2's
+  per-column RLE compression effectively dedupes the per-item
+  overhead (constant clock deltas collapse via IntDiffOptRle),
+  so it captures most of the squash benefit at the wire layer
+  without needing in-memory merging. V2 is the right choice
+  for persistence/snapshot today, regardless of squash status.
+- **Apply throughput is within ~1.85× yjs's** on this workload
+  after search markers landed — comfortably within DESIGN.md's
+  "within 2× of yrs" target (yrs is itself usually faster than
+  yjs on B4 per native benchmarks).
+- **Encode V2 is ~7× slower** than encode V1 because of
+  `StringEncoder` UTF-16 length computation and per-key staging
+  — the per-column primitives that buy us the 8.7× doc-size
+  win cost time at flush. Acceptable trade for snapshot/disk;
+  V1 is the right choice for hot-path encode (broadcast paths).
+
+A proper cross-impl harness that runs ygo + native yrs +
+yjs through a single comparison runner under identical
+hardware is on the [tech-debt list](docs/tech-debt.md). The
+numbers above are sufficient for positioning in grant
+applications and project documentation; a head-to-head harness
+is a "later" optimization.
 
 ## Reproducing
 

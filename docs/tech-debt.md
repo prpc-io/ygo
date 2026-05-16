@@ -325,6 +325,7 @@
 - **What:** yrs runs an 11-step commit lifecycle (squash mergeBlocks, GC eligible deleted, fire pre-emit observers, emit V1 update event, emit subdoc events, fire after-commit observers, etc. — see `docs/yrs-port-notes/transaction.md` § "Commit lifecycle"). We currently only release the write lock and mark the txn closed.
 - **Why deferred:** every step depends on a layer that does not yet exist (squash needs `Item.TrySquash` + `ClientBlockList.SquashLeft`; GC needs `gc.go`; observers need an observer subsystem; update emit needs the V1 encoder; subdocs need subdoc support).
 - **Impact today:** `mergeBlocks`, `deletedIDs`, `changedTypes` accumulate across the transaction but are dropped at Commit. Memory leak per transaction; no observer notifications; updates not emitted. None of this matters until callers exist.
+- **Concrete bandwidth impact** (B4 workload, see [BENCHMARKS.md](/BENCHMARKS.md)): without commit-time squash, each per-character Text.Insert in the LaTeX trace produces a separate Item, none of which merge with same-client adjacent-clock neighbours. V1 doc size after applying 259,778 edits is 1.97 MB vs yjs's 160 KB (~12× bloat). V2 is unaffected because per-column RLE encoding effectively dedupes the per-item overhead at the wire layer (V2 doc size 227 KB ~ 1.4× yjs's V1). Wiring commit-time squash would bring V1 within ~1-2× of yjs. **Implementation:** add `ClientBlockList.SquashLeft(idx)` (drop cell at idx, merge with idx-1 via `Item.TrySquash`), then `(*TransactionMut).Commit` walks `mergeBlocks` calling `SquashLeft` for each. ~100-150 LOC + test updates for existing item-count assertions. Marker invalidation in `Item.Integrate` already handles the linked-list shape change.
 - **When to address:** unblock each step as the underlying layer lands. Squash first (right after Item.Integrate, since squash is what consumes mergeBlocks). Update emission second (with V1 encoder). Observers third. GC and subdocs last.
 
 ### Transaction lifetime not enforced
@@ -379,12 +380,12 @@
 - **Why deferred:** Any TLV was scoped to scalars in the MVP — see "Any type is a placeholder" entry above. Closing this unblocks B3.2 (and unlocks objects-as-values for adopters using Map for JSON-shaped configuration).
 - **When to address:** with the broader Any TLV variant work. Implementation: extend `internal/encoding/any_codec.go` to handle the upstream lib0 Any tag set (tags 116-127 covering array / object / undefined / float32 / bigint / buffer).
 
-### Cross-implementation benchmark harness (vs yrs)
+### Cross-implementation benchmark harness (vs yrs / yjs, automated)
 
 - **Where:** missing; tracked here so DESIGN.md's "within 2× of yrs" target stays explicit.
-- **What:** `BENCHMARKS.md` documents ygo absolute numbers, but a side-by-side run vs yrs (and ideally automerge / loro / diamond-types) under identical hardware would let us prove the 2× claim or pinpoint exact gaps per ID.
-- **Why deferred:** the upstream `dmonad/crdt-benchmarks` JS runner shells out to native modules; integrating ygo would need a Go-side adapter that produces the same JSON output the JS aggregator consumes.
-- **When to address:** opportunistic; the per-impl absolute numbers already inform optimization priorities (search markers → B4; Any TLV objects → B3.2).
+- **What:** [BENCHMARKS.md](/BENCHMARKS.md) "Comparison with yjs / ywasm" section now informally compares ygo's measured numbers against `dmonad/crdt-benchmarks` published yjs/ywasm numbers, with explicit hardware/runtime caveats. That gets us to "qualitatively comparable" but not "definitively prove within 2× under identical conditions". A proper harness would run ygo + native yrs (not ywasm) + yjs through a single comparison runner on the same hardware and produce a comparison table.
+- **Why deferred:** upstream `dmonad/crdt-benchmarks` JS runner shells out to native modules; integrating ygo would need a Go-side adapter producing the same JSON output the JS aggregator consumes. Native yrs needs the rust toolchain present; CI overhead non-trivial. Marginal value over the informal comparison.
+- **When to address:** opportunistic; current absolute numbers + qualitative comparison are sufficient for grant applications and project positioning. Re-prioritise if a reviewer / adopter specifically asks "show me side-by-side on identical hardware".
 
 ## Open questions captured but not resolved
 
