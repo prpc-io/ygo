@@ -29,6 +29,7 @@ Per-layer working notes generated incrementally as each layer of the Rust [`yrs`
 | y-sync protocol | `y-protocols/sync.js` + Hocuspocus envelope | [`protocol-sync.md`](protocol-sync.md) | done; reference for implementation |
 | Awareness | `yrs/src/sync/awareness.rs` + `y-protocols/awareness.js` | [`awareness.md`](awareness.md) | done; reference for implementation |
 | Nested-type construction | `yrs/src/block.rs:1368-1431` + `yjs/src/structs/ContentType.js` | [`nested-types.md`](nested-types.md) | done; reference for implementation |
+| Rich-text Text formatting | `yrs/src/types/text.rs` + `yjs/src/structs/ContentFormat.js`, `ContentEmbed.js`, `YText.js` | [`types-text-rich.md`](types-text-rich.md) | done; reference for implementation |
 
 ## Why per-layer rather than monolithic
 
