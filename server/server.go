@@ -34,8 +34,8 @@ import (
 
 	"github.com/Deln0r/ygo/internal/awareness"
 	"github.com/Deln0r/ygo/internal/doc"
-	"github.com/Deln0r/ygo/internal/persist"
 	syncpkg "github.com/Deln0r/ygo/internal/sync"
+	"github.com/Deln0r/ygo/persist"
 )
 
 // Options configures a Server. The zero value is valid: in-memory

@@ -15,9 +15,9 @@ import (
 	"github.com/Deln0r/ygo/internal/awareness"
 	"github.com/Deln0r/ygo/internal/doc"
 	"github.com/Deln0r/ygo/internal/encoding"
-	"github.com/Deln0r/ygo/internal/persist/sqlite"
 	syncpkg "github.com/Deln0r/ygo/internal/sync"
 	"github.com/Deln0r/ygo/internal/types"
+	"github.com/Deln0r/ygo/persist/sqlite"
 	"github.com/Deln0r/ygo/server"
 )
 

@@ -210,6 +210,18 @@
 - **Why deferred:** by design — the block layer references these only through pointers and never inspects their internals. Real definitions land with their owning layers.
 - **When to address:** `Branch` with the types layer; `Move` post-MVP per ROADMAP. The `block.Doc` stub stays even after `internal/doc.Doc` lands, because the block layer can't depend on the doc layer (would cycle); we'll bridge them through an interface when sub-document support arrives.
 
+## Public API surface
+
+### gomobile bind has not been run against the public API
+
+- **Where:** missing CI matrix entry, missing example iOS/Android app, no `make gomobile-check` target.
+- **What:** the public `ygo` package (root) exposes the API gomobile bind would consume — but the actual `gomobile bind` workflow has not been run end-to-end to confirm what's bindable, what gets skipped, and what generates a usable Java / Swift binding. The published `gomobile` toolchain has well-known restrictions: function parameters of type `any` / `map[K]V` / `chan T` / `func(...)` are silently dropped; generics break the bind step entirely; methods that take or return slices of non-byte types are skipped.
+- **Impact today:** the marquee "pure-Go = gomobile bind works for iOS/Android" claim in DESIGN.md is structurally correct (no CGO, no syscall.Mmap, no unsafe in load-bearing paths) but operationally untested. An adopter who runs `gomobile bind github.com/Deln0r/ygo` will find that `*Map.Range(fn)`, `*Map.Get(k) any`, `*Array.ToSlice() []any`, `Awareness.States() map[uint64][]byte`, every `Attrs` parameter, and every callback-based subscriber method get filtered out of the binding. The wire-format primitives (`EncodeStateAsUpdate`, `ApplyUpdate`, byte-only `Doc` construction) survive and would be the actual mobile-binding surface.
+- **When to address:** when a real mobile adopter shows up, OR as a v0.2 hardening pass. Two paths:
+  1. **Light:** add a `gomobile/` sub-package exporting only the bindable subset — bytes-in, bytes-out wrapper functions over `Doc` + `Awareness` + `Encode/Apply` — and document that gomobile-targeted code uses this subset.
+  2. **Heavy:** restructure the public API to never expose `any` / `map` / callbacks at the boundary, force everyone through bytes-in/bytes-out — clean but a meaningful refactor of `Map.Get` / `Range` / `States`.
+- **Acknowledgement:** gomobile-friendliness is a real selling point relative to yrs (which needs CGO and a manual FFI layer for mobile). The "no CGO" half of the promise is delivered; the "fully bindable" half is gated on the work above.
+
 ## Sync protocol / WebSocket server
 
 ### Hocuspocus extensions (Auth, Stateless, Close, SyncStatus) not implemented

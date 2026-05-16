@@ -31,8 +31,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Deln0r/ygo/internal/persist"
-	"github.com/Deln0r/ygo/internal/persist/sqlite"
+	"github.com/Deln0r/ygo/persist"
+	"github.com/Deln0r/ygo/persist/sqlite"
 	"github.com/Deln0r/ygo/server"
 )
 

@@ -36,7 +36,7 @@ import (
 	// modernc.org/sqlite registers itself as the "sqlite" driver.
 	_ "modernc.org/sqlite"
 
-	"github.com/Deln0r/ygo/internal/persist"
+	"github.com/Deln0r/ygo/persist"
 )
 
 // memoryDSN is the dsn modernc.org/sqlite recognises for ephemeral

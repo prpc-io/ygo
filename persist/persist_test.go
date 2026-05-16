@@ -9,9 +9,9 @@ import (
 
 	"github.com/Deln0r/ygo/internal/doc"
 	"github.com/Deln0r/ygo/internal/encoding"
-	"github.com/Deln0r/ygo/internal/persist"
-	"github.com/Deln0r/ygo/internal/persist/sqlite"
 	"github.com/Deln0r/ygo/internal/types"
+	"github.com/Deln0r/ygo/persist"
+	"github.com/Deln0r/ygo/persist/sqlite"
 )
 
 // newTestStore returns a fresh in-memory sqlite store with cleanup

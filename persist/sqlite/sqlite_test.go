@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Deln0r/ygo/internal/persist/sqlite"
+	"github.com/Deln0r/ygo/persist/sqlite"
 )
 
 // TestOpen_FilePath_PersistsAcrossReopens proves that bytes written

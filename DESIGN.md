@@ -128,20 +128,37 @@ Reference impl: `pkg/store/sqlite` using `modernc.org/sqlite`.
 
 ```
 github.com/Deln0r/ygo/
-  doc.go                  # package ygo top-level docs
-  doc/                    # Doc, Transaction (planned)
-  types/                  # Map, Array, Text (planned)
-  internal/lib0/          # varint encoding
-  internal/block/         # Item/Block (planned)
-  protocol/sync/          # y-sync v1 (planned)
-  protocol/awareness/     # Awareness CRDT (planned)
-  store/                  # Store interface (planned)
-  store/sqlite/           # modernc.org/sqlite impl (planned)
-  cmd/ygo-server/         # Hocuspocus-compat server (planned)
-  testdata/               # Captured fixtures from JS Yjs
+  ygo.go                  # public API surface: Doc/Map/Array/Text/Xml*/Awareness aliases + helpers
+  ygo_test.go             # external-API smoke tests (package ygo_test)
+  doc.go                  # package docstring + Version constant
+  persist/                # Store interface (public)
+  persist/sqlite/         # modernc.org/sqlite reference impl (public)
+  server/                 # WebSocket sync server (public; http.Handler)
+  cmd/ygo-server/         # stand-alone server binary
+  internal/lib0/          # varint primitives
+  internal/block/         # Item / Branch / TypeRef / Repair / Integrate
+  internal/store/         # BlockStore
+  internal/doc/           # Doc / Transaction / TransactionMut
+  internal/encoding/      # V1 update + state-vector + IdSet + pending buffer
+  internal/awareness/     # y-protocols Awareness layer
+  internal/sync/          # y-sync + Hocuspocus message framing + handler
+  internal/types/         # Map / Array / Text (plain + rich) / Xml*
+  internal/utf16/         # UTF-16 length / SplitAt with U+FFFD
+  docs/                   # design + tech-debt + yrs port notes
+  testdata/               # cross-language fixtures (V1 update, lib0, ...)
   testdata/gen/           # Node.js fixture generator
-  benchmarks/             # Port of dmonad/crdt-benchmarks (planned)
+  benchmarks/             # dmonad/crdt-benchmarks port (planned)
 ```
+
+External Go code only needs:
+
+```go
+import "github.com/Deln0r/ygo"             // Doc, Map, Array, Text, Xml*, Awareness
+import "github.com/Deln0r/ygo/persist/sqlite"   // sqlite Store impl
+import "github.com/Deln0r/ygo/server"      // WebSocket sync server
+```
+
+The `internal/*` packages are deliberately not importable from outside the module.
 
 ## Working materials
 

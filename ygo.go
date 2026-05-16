@@ -1,0 +1,244 @@
+package ygo
+
+// Public API surface for the ygo CRDT framework.
+//
+// External Go code imports `github.com/Deln0r/ygo` and uses the
+// types and functions re-exported here. The implementation lives
+// under internal/* — the aliases below pin those internal types
+// to a stable name so callers do not need to know the package
+// layout. For sub-systems with their own concerns (persistence,
+// WebSocket server) see:
+//
+//   - github.com/Deln0r/ygo/persist        (Store interface)
+//   - github.com/Deln0r/ygo/persist/sqlite (pure-Go SQLite impl)
+//   - github.com/Deln0r/ygo/server         (WebSocket sync server)
+//
+// Type aliases (vs wrapper structs) keep method sets intact at
+// zero runtime cost — `*ygo.Map` is exactly `*types.Map`, so
+// SetMap / SetArray / SetText return the right type without any
+// wrapping or copying.
+
+import (
+	"github.com/Deln0r/ygo/internal/awareness"
+	"github.com/Deln0r/ygo/internal/block"
+	"github.com/Deln0r/ygo/internal/doc"
+	"github.com/Deln0r/ygo/internal/encoding"
+	"github.com/Deln0r/ygo/internal/store"
+	"github.com/Deln0r/ygo/internal/types"
+)
+
+// Doc is a single CRDT replica — the local view of a collaborative
+// document. Construct with NewDoc; mutate via WriteTxn; read via
+// ReadTxn. See the doc-comment on the underlying type for the full
+// concurrency contract.
+type Doc = doc.Doc
+
+// Options bundles per-Doc settings (deterministic ClientID, GC
+// disable). The zero value is the recommended configuration.
+type Options = doc.Options
+
+// Transaction is a read-only transaction holding the doc's read
+// lock for its lifetime. Created by Doc.ReadTxn; released by Close.
+type Transaction = doc.Transaction
+
+// TransactionMut is a write transaction holding the doc's write
+// lock. Created by Doc.WriteTxn; released by Commit.
+type TransactionMut = doc.TransactionMut
+
+// NewDoc returns a fresh Doc with default options and a random
+// client identifier.
+func NewDoc() *Doc { return doc.NewDoc() }
+
+// NewDocWithOptions returns a fresh Doc with the given options.
+func NewDocWithOptions(opts Options) *Doc { return doc.NewDocWithOptions(opts) }
+
+// Branch is the low-level shared-data container the types layer
+// wraps. Most callers should use the typed constructors (NewMap,
+// NewArray, NewText, NewXmlFragment) rather than building Branches
+// directly. Re-exported here for advanced cases (custom shared-type
+// implementations, observability code).
+type Branch = block.Branch
+
+// MaxClientID is the upper bound on Doc.ClientID values
+// (2^53 - 1, matching JS Yjs's safe-integer range).
+const MaxClientID = doc.MaxClientID
+
+// Shared-type wrappers — re-exported from internal/types.
+type (
+	Map         = types.Map
+	Array       = types.Array
+	Text        = types.Text
+	XmlFragment = types.XmlFragment
+	XmlElement  = types.XmlElement
+	XmlText     = types.XmlText
+
+	// Attrs is the format-attribute map used by Text's rich-text
+	// API and DeltaOp. Keys are arbitrary strings; values are
+	// JSON-serializable scalars. A nil value clears the attribute
+	// on the affected range.
+	Attrs = types.Attrs
+
+	// DeltaOp is one Quill-style delta operation produced by
+	// Text.ToDelta and (future) consumed by Text.ApplyDelta.
+	DeltaOp = types.DeltaOp
+
+	// ChunkKind discriminates the variants emitted by Text.Range.
+	ChunkKind = types.ChunkKind
+)
+
+// Text.Range emits chunks of either of these kinds.
+const (
+	ChunkString = types.ChunkString
+	ChunkEmbed  = types.ChunkEmbed
+)
+
+// NewMap, NewArray, NewText, NewXmlFragment return wrappers bound
+// to the root branch with the given name in d. The branch is
+// lazily created on first call; subsequent calls with the same
+// name return wrappers pointing at the same underlying state.
+//
+// Per-branch type discipline: a branch should be used as ONE type
+// (Map OR Array OR Text OR XML). Mixing types on the same root
+// branch produces undefined behaviour.
+func NewMap(d *Doc, name string) *Map {
+	return types.NewMap(d.Branch(name))
+}
+
+func NewArray(d *Doc, name string) *Array {
+	return types.NewArray(d.Branch(name))
+}
+
+func NewText(d *Doc, name string) *Text {
+	return types.NewText(d.Branch(name))
+}
+
+func NewXmlFragment(d *Doc, name string) *XmlFragment {
+	return types.NewXmlFragment(d.Branch(name))
+}
+
+// NewXmlElement wraps a branch as an XmlElement. Typically used
+// for root-level XML where the branch was constructed via
+// d.Branch(name); nested elements should be constructed via
+// XmlFragment.InsertXmlElement / XmlElement.InsertXmlElement which
+// set TypeRef and Name automatically.
+func NewXmlElement(d *Doc, name string) *XmlElement {
+	return types.NewXmlElement(d.Branch(name))
+}
+
+func NewXmlText(d *Doc, name string) *XmlText {
+	return types.NewXmlText(d.Branch(name))
+}
+
+// Awareness tracks per-client ephemeral state (cursors, names,
+// selections). Independent of any Doc; the local clientID is
+// passed at construction. Embedders typically pair an Awareness
+// with a Doc and use d.ClientID() as the awareness clientID.
+type Awareness = awareness.Awareness
+
+// NewAwareness returns a fresh Awareness for the given local
+// clientID. Use d.ClientID() to keep the awareness layer in sync
+// with the doc.
+func NewAwareness(clientID uint64) *Awareness { return awareness.New(clientID) }
+
+// DefaultAwarenessTimeout is the y-protocols convention for stale
+// awareness-entry eviction (30 seconds). Pass to
+// Awareness.SweepOutdated.
+const DefaultAwarenessTimeout = awareness.DefaultTimeout
+
+// EncodeStateAsUpdate returns the wire-encoded V1 update carrying
+// the doc's full state. Apply to a fresh peer doc to bring it up
+// to speed in one shot; same bytes interoperate with JS Yjs's
+// Y.encodeStateAsUpdate.
+func EncodeStateAsUpdate(d *Doc) []byte {
+	return encoding.EncodeStateAsUpdate(d)
+}
+
+// EncodeStateVector returns the wire-encoded V1 state vector of d.
+// Sync-protocol callers send this to peers as "here's what I have;
+// send me everything else."
+func EncodeStateVector(d *Doc) []byte {
+	t := d.ReadTxn()
+	defer t.Close()
+	return encoding.EncodeStateVector(t.Store().GetStateVector(), nil)
+}
+
+// EncodeDiff returns the wire-encoded V1 update covering the
+// blocks d has that the remote (per remoteSVBytes) does not. A
+// nil remoteSVBytes is treated as the empty SV — emit everything.
+//
+// remoteSVBytes is the V1 wire-encoded form of the remote's state
+// vector (the same shape EncodeStateVector produces).
+func EncodeDiff(d *Doc, remoteSVBytes []byte) ([]byte, error) {
+	var sv store.StateVector
+	if len(remoteSVBytes) > 0 {
+		decoded, _, err := encoding.DecodeStateVector(remoteSVBytes)
+		if err != nil {
+			return nil, err
+		}
+		sv = decoded
+	}
+	t := d.ReadTxn()
+	defer t.Close()
+	return encoding.EncodeDiff(d, t, sv), nil
+}
+
+// ApplyUpdate decodes raw and integrates it into d. Items whose
+// dependencies the local store has not yet seen queue in the
+// per-doc pending buffer and drain automatically on subsequent
+// ApplyUpdate calls that satisfy them.
+//
+// Use HasPending / MissingSV to inspect the queue.
+func ApplyUpdate(d *Doc, raw []byte) error {
+	return encoding.ApplyUpdate(d, raw)
+}
+
+// HasPending reports whether d has any queued items awaiting
+// causal dependencies.
+func HasPending(d *Doc) bool {
+	t := d.ReadTxn()
+	defer t.Close()
+	return encoding.HasPending(t)
+}
+
+// MissingSV returns the wire-encoded V1 state vector identifying
+// the clocks d needs to receive in order to drain its pending
+// buffer. An empty result means the queue is empty.
+//
+// Sync-protocol callers send this to peers as a re-fetch request:
+// "I am stuck on items that need updates past this clock."
+func MissingSV(d *Doc) []byte {
+	t := d.ReadTxn()
+	defer t.Close()
+	sv := encoding.MissingSV(t)
+	return encoding.EncodeStateVector(sv, nil)
+}
+
+// MergeUpdates decodes every blob in updates in order, applies
+// them to a fresh Doc, and returns a single V1 update blob
+// equivalent to the merged state. Returns nil for an empty input.
+//
+// Used by persistence layers for compaction (Flush) and by
+// transports that want to batch-coalesce updates before sending.
+func MergeUpdates(updates [][]byte) ([]byte, error) {
+	// Use the persist package's helper directly — the function is
+	// stateless and re-exporting it would create a dependency cycle
+	// between root ygo and persist. Inline the small wrapper here.
+	if len(updates) == 0 {
+		return nil, nil
+	}
+	d := doc.NewDoc()
+	wtxn := d.WriteTxn()
+	for _, raw := range updates {
+		upd, _, err := encoding.DecodeUpdate(raw)
+		if err != nil {
+			wtxn.Commit()
+			return nil, err
+		}
+		if err := upd.Apply(wtxn); err != nil {
+			wtxn.Commit()
+			return nil, err
+		}
+	}
+	wtxn.Commit()
+	return encoding.EncodeStateAsUpdate(d), nil
+}
