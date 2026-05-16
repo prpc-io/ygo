@@ -1,0 +1,44 @@
+[
+  {
+    "description": "SyncStep1 from empty doc",
+    "js_client_id": 300,
+    "envelope_hex": "00000100",
+    "message_type": "sync.step1",
+    "payload_hex": "00"
+  },
+  {
+    "description": "SyncStep1 from non-empty doc",
+    "js_client_id": 301,
+    "envelope_hex": "00000401ad0202",
+    "message_type": "sync.step1",
+    "payload_hex": "01ad0202"
+  },
+  {
+    "description": "SyncStep2 with array state",
+    "js_client_id": 302,
+    "envelope_hex": "00011e0101ae02000801056974656d73027705666972737477067365636f6e6400",
+    "message_type": "sync.step2",
+    "payload_hex": "0101ae02000801056974656d73027705666972737477067365636f6e6400"
+  },
+  {
+    "description": "SyncUpdate incremental text insert",
+    "js_client_id": 303,
+    "envelope_hex": "0002100101af020684af020505776f726c6400",
+    "message_type": "sync.update",
+    "payload_hex": "0101af020684af020505776f726c6400"
+  },
+  {
+    "description": "Awareness frame with one client state",
+    "js_client_id": 304,
+    "envelope_hex": "011501b00201107b226e616d65223a22416c696365227d",
+    "message_type": "awareness",
+    "payload_hex": "01b00201107b226e616d65223a22416c696365227d"
+  },
+  {
+    "description": "QueryAwareness empty handshake",
+    "js_client_id": 0,
+    "envelope_hex": "03",
+    "message_type": "query-awareness",
+    "payload_hex": ""
+  }
+]

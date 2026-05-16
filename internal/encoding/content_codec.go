@@ -1,11 +1,48 @@
 package encoding
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/Deln0r/ygo/internal/block"
 	"github.com/Deln0r/ygo/internal/lib0"
 )
+
+// writeJSON appends `varstring(JSON.stringify(v))` to buf, matching
+// yjs UpdateEncoderV1.writeJSON (testdata/gen/node_modules/yjs/src/
+// utils/UpdateEncoder.js:115). Used by KindFormat and KindEmbed
+// content variants — both encode their payload as a JSON-string,
+// NOT as a lib0 Any TLV. The two encoding paths look superficially
+// similar (both varuint-prefix some bytes) but diverge on the
+// payload: lib0 Any starts with a 1-byte type tag (116..127),
+// JSON starts with the textual representation.
+//
+// nil values encode as the JSON literal "null".
+func writeJSON(buf []byte, v block.Any) []byte {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		// Fall back to the JSON null literal — yjs has the same
+		// failure mode (JSON.stringify of a circular structure
+		// throws; we degrade rather than panic).
+		raw = []byte("null")
+	}
+	return lib0.WriteVarString(buf, string(raw))
+}
+
+// readJSON consumes a varstring + JSON-parses it. Returns the
+// parsed value plus the unconsumed tail. Mirrors yjs
+// UpdateDecoderV1.readJSON (UpdateDecoder.js:113).
+func readJSON(buf []byte) (block.Any, []byte, error) {
+	s, n, err := lib0.ReadVarString(buf)
+	if err != nil {
+		return nil, buf, err
+	}
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return nil, buf, fmt.Errorf("readJSON: %w", err)
+	}
+	return v, buf[n:], nil
+}
 
 // EncodeContent appends the wire-format payload of c to buf. Caller
 // has already emitted the info byte; this writes only the content
@@ -33,25 +70,26 @@ func EncodeContent(buf []byte, c block.Content) []byte {
 	case block.KindDeleted:
 		return lib0.WriteVarUint(buf, c.DeletedLen)
 	case block.KindEmbed:
-		// Single Any payload — yjs/src/structs/ContentEmbed.js write.
-		// We carry Embed's payload in Anys[0]; if missing, treat as nil
-		// (encoded as Any-Null tag).
+		// Single JSON-encoded payload — yjs ContentEmbed.write
+		// calls writeJSON which is `varstring(JSON.stringify(v))`
+		// in the V1 encoder (testdata/gen/node_modules/yjs/src/
+		// structs/ContentEmbed.js + UpdateEncoder.js:115). NOT
+		// lib0 Any TLV — the encoders diverge here.
 		var v block.Any
 		if len(c.Anys) > 0 {
 			v = c.Anys[0]
 		}
-		return EncodeAny(buf, v)
+		return writeJSON(buf, v)
 	case block.KindFormat:
-		// varstring(key) + Any(value) — yjs ContentFormat.js write.
-		// Anys[0] is the value (may be nil to signal clear-attribute,
-		// which encodes as the Any-Null tag — receiver interprets the
-		// null in updateCurrentAttributes per types-text-rich.md gotcha 8).
+		// varstring(key) + varstring(JSON.stringify(value)) —
+		// yjs ContentFormat.write + writeJSON, per V1 encoder
+		// (UpdateEncoder.js:115). NOT lib0 Any.
 		buf = lib0.WriteVarString(buf, c.FormatKey)
 		var v block.Any
 		if len(c.Anys) > 0 {
 			v = c.Anys[0]
 		}
-		return EncodeAny(buf, v)
+		return writeJSON(buf, v)
 	case block.KindType:
 		// ContentType payload: varuint(typeRef) + optional
 		// varstring(name) for XmlElement (refID 3) and XmlHook
@@ -119,7 +157,9 @@ func DecodeContent(buf []byte, refNum uint8) (block.Content, []byte, error) {
 		}
 		return block.Content{Kind: block.KindDeleted, DeletedLen: v}, buf[n:], nil
 	case block.KindEmbed:
-		v, tail, err := DecodeAny(buf)
+		// JSON-string payload, NOT lib0 Any. Mirrors
+		// yjs UpdateDecoder.readJSON.
+		v, tail, err := readJSON(buf)
 		if err != nil {
 			return block.Content{}, buf, err
 		}
@@ -130,7 +170,7 @@ func DecodeContent(buf []byte, refNum uint8) (block.Content, []byte, error) {
 			return block.Content{}, buf, err
 		}
 		buf = buf[n:]
-		v, tail, err := DecodeAny(buf)
+		v, tail, err := readJSON(buf)
 		if err != nil {
 			return block.Content{}, buf, err
 		}

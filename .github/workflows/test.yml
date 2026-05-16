@@ -66,9 +66,21 @@ jobs:
       - name: regenerate yjs-update fixtures
         working-directory: testdata/gen
         run: node gen-yjs-update.mjs
+      - name: regenerate awareness fixtures
+        working-directory: testdata/gen
+        run: node gen-awareness.mjs
+      - name: regenerate sync envelope fixtures
+        working-directory: testdata/gen
+        run: node gen-sync.mjs
+      - name: regenerate xml fixtures
+        working-directory: testdata/gen
+        run: node gen-xml.mjs
       - name: verify no diff
         run: git diff --exit-code testdata/
       - name: run go tests against fixtures
         run: |
           go test ./internal/lib0/... -run TestFixtures
           go test ./internal/encoding/... -run TestFixtures
+          go test ./internal/awareness/... -run TestFixtures
+          go test ./internal/sync/... -run TestFixtures
+          go test ./internal/types/... -run TestFixtures_DecodeApplyJSXmlUpdates

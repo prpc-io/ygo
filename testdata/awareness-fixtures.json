@@ -1,0 +1,67 @@
+[
+  {
+    "description": "single client with name+color",
+    "js_client_id": 100,
+    "update_hex": "016401227b226e616d65223a22416c696365222c22636f6c6f72223a2223464630303030227d",
+    "expected_states": {
+      "100": {
+        "name": "Alice",
+        "color": "#FF0000"
+      }
+    }
+  },
+  {
+    "description": "single client with cursor position",
+    "js_client_id": 101,
+    "update_hex": "016501267b22637572736f72223a7b2278223a34322c2279223a377d2c22666f637573223a747275657d",
+    "expected_states": {
+      "101": {
+        "cursor": {
+          "x": 42,
+          "y": 7
+        },
+        "focus": true
+      }
+    }
+  },
+  {
+    "description": "two clients (local + simulated remote)",
+    "js_client_id": 102,
+    "update_hex": "026601107b226e616d65223a226c6f63616c227dca0101117b226e616d65223a2272656d6f7465227d",
+    "expected_states": {
+      "102": {
+        "name": "local"
+      },
+      "202": {
+        "name": "remote"
+      }
+    }
+  },
+  {
+    "description": "client with empty state object",
+    "js_client_id": 103,
+    "update_hex": "016701027b7d",
+    "expected_states": {
+      "103": {}
+    }
+  },
+  {
+    "description": "unicode in state value",
+    "js_client_id": 104,
+    "update_hex": "016801227b226e616d65223a22d098d0b2d0b0d0bd222c22656d6f6a69223a22f09f9a80227d",
+    "expected_states": {
+      "104": {
+        "name": "Иван",
+        "emoji": "🚀"
+      }
+    }
+  },
+  {
+    "description": "client set then removed (wire still carries entry)",
+    "js_client_id": 105,
+    "update_hex": "016902046e756c6c",
+    "expected_states": {
+      "105": null
+    }
+  }
+]

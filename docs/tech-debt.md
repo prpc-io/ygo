@@ -231,11 +231,10 @@
 - **Impact today:** clients that REQUIRE these (Hocuspocus's hosted offering with auth tokens, custom extensions using Stateless for app-level RPC) will not work. Pure y-websocket clients and the Sync+Awareness subset of Hocuspocus clients work fine.
 - **When to address:** v0.2. Auth first (Options.OnAuthenticate callback + MessageClose with permission-denied reason code 4401, per port-note "Auth flow"). Stateless second (Options.OnStateless callback). SyncStatus third (low-priority — ack signal that most clients ignore).
 
-### Cross-language y-websocket / Hocuspocus fixture not captured
+### Cross-language y-websocket / Hocuspocus fixture (resolved)
 
-- **Where:** missing `testdata/gen/gen-sync-protocol.mjs`, `testdata/sync-fixtures.json`, Go fixture test in `internal/sync/`.
-- **What:** byte-level wire format is asserted via hand-built fixtures in `framing_test.go` and pure-Go round-trip in `handler_test.go`. No proof against a real y-websocket server emitting the same bytes.
-- **When to address:** before announcing the server as "Hocuspocus-compat" beyond v0.1. Wire a Node fixture that runs y-websocket server briefly, captures its initial-handshake bytes for a known clientID, asserts our server produces matching bytes.
+- **Was:** byte-level wire format asserted only via hand-built fixtures in `framing_test.go` and pure-Go round-trip in `handler_test.go`.
+- **Resolved by:** `testdata/gen/gen-sync.mjs` captures 6 envelope scenarios (SyncStep1 from empty + non-empty doc, SyncStep2 with array state, SyncUpdate incremental text insert, Awareness frame, QueryAwareness handshake) using y-protocols/sync + Hocuspocus outer-tag layout. `internal/sync/fixtures_test.go` decodes each via DecodeEnvelope and verifies Type / SyncSub / Payload match. Reverse-encode test for QueryAwareness (only deterministic-payload type) confirms byte-equality.
 
 ### Broadcast fan-out is O(N) per update with no rate limiting
 
@@ -258,12 +257,10 @@
 
 ## Awareness layer
 
-### Cross-language JS y-protocols fixture not yet captured
+### Cross-language JS y-protocols fixture (resolved)
 
-- **Where:** missing `testdata/gen/gen-awareness.mjs`, `testdata/awareness-updates.json`, Go fixture test in `internal/awareness/`.
-- **What:** the other CRDT layers (Map, Array, Text, V1 update) each have a captured JS-Yjs fixture set proving Go decodes bytes JS produces. Awareness has only the hand-built byte fixture in `TestWireFixture_KnownBytesDecode` plus pure-Go round-trip tests. No proof against `y-protocols`'s `encodeAwarenessUpdate` output.
-- **Why this matters:** y-protocols uses `JSON.stringify` for the state payload. JS may canonicalize object key order differently than Go's `encoding/json` (in practice both are unspecified), and the "null" sentinel is a string literal — divergence here would silently break JS interop. The byte fixture proves the layout but not against a real reference encoder.
-- **When to address:** before the WebSocket sync server (Hocuspocus-compat) ships, since the server's value proposition is byte-equivalence with JS clients. Pre-conditions: add `y-protocols` to `testdata/gen/package.json`; write `gen-awareness.mjs` capturing add/update/remove/multi-client scenarios; add `awareness_fixtures_test.go`; wire into the CI fixtures job.
+- **Was:** awareness had only hand-built byte fixtures plus pure-Go round-trip tests; no proof against y-protocols' `encodeAwarenessUpdate` output.
+- **Resolved by:** `testdata/gen/gen-awareness.mjs` captures 6 scenarios (name+color, cursor position, two clients, empty state, unicode, set-then-removed); `internal/awareness/fixtures_test.go` decodes each via Apply, verifies state map matches JS via structural JSON equality, plus reverse-direction encode test for single-client scenarios. Wired into CI's fixtures job; runs on every push. Also flagged a JS-impl quirk: `encodeAwarenessUpdate` iterates the caller-supplied client list which is normally `getStates().keys()` (excludes removed), so capturing removal entries requires explicitly passing `meta.keys()` instead.
 
 ### Apply returns updated for self-eviction defense bump
 
