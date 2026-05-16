@@ -62,6 +62,29 @@ type Options struct {
 	// same-origin protection). Forwarded verbatim to coder/websocket
 	// AcceptOptions.
 	OriginPatterns []string
+
+	// OnAuthenticate is the Hocuspocus auth callback. When set,
+	// the server expects every client to send a MessageAuth(Token)
+	// envelope shortly after connecting; the callback receives the
+	// docName + token and returns nil to accept or error to deny.
+	// On denial the server emits AuthPermissionDenied + Close and
+	// closes the WS with code 4401 (CloseStatusUnauthorized).
+	//
+	// When nil (the bare y-websocket default), MessageAuth tokens
+	// are accepted silently — the server responds with
+	// AuthAuthenticated so Hocuspocus clients flip their internal
+	// "authenticated" flag and proceed.
+	OnAuthenticate syncpkg.AuthHandler
+
+	// OnStateless is the Hocuspocus stateless-channel callback.
+	// Receives docName + payload string for both MessageStateless
+	// and MessageBroadcastStateless envelopes. Long-running work
+	// should be dispatched off-thread — this runs on the conn's
+	// read goroutine.
+	//
+	// MessageBroadcastStateless also fans out to other conns on
+	// the doc regardless of whether the callback is set.
+	OnStateless syncpkg.StatelessHandler
 }
 
 // Server is the http.Handler implementation. Construct with New
@@ -288,6 +311,9 @@ func (s *Server) newConn(state *docState, ws *websocket.Conn) *conn {
 	h := syncpkg.New(state.doc, state.awareness, id)
 	h.Send = c.send
 	h.Broadcast = c.broadcast
+	h.DocName = state.name
+	h.OnAuthenticate = s.opts.OnAuthenticate
+	h.OnStateless = s.opts.OnStateless
 	c.handler = h
 	return c
 }
@@ -381,6 +407,15 @@ func (c *conn) readLoop(ctx context.Context) {
 			// preserved for the next reconnect.
 			_ = c.ws.Close(websocket.StatusInternalError,
 				fmt.Sprintf("handle frame: %v", err))
+			return
+		}
+		// Hocuspocus auth: the handler sets AuthFailed when it has
+		// sent AuthPermissionDenied + Close envelopes; the
+		// transport tears down with the reserved 4401 code so
+		// Hocuspocus clients see "unauthorized" rather than a
+		// generic disconnect.
+		if c.handler.AuthFailed {
+			_ = c.ws.Close(syncpkg.CloseStatusUnauthorized, "unauthorized")
 			return
 		}
 	}

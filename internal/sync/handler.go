@@ -23,6 +23,26 @@ type Sender func(envelope []byte) error
 // per-doc connection set.
 type Broadcaster func(envelope []byte)
 
+// AuthHandler is the optional server-side callback invoked when a
+// Conn receives a MessageAuth token from the client. Returns nil
+// to accept (server replies with EncodeAuthAuthenticated; sync
+// proceeds normally), or an error to deny (server replies with
+// EncodeAuthPermissionDenied(error.Error()), then EncodeClose,
+// and the transport tears down the connection with WS close code
+// 4401). The DocName is the docName the WS was bound to at
+// upgrade time; AuthHandler may use it for per-document
+// authorization.
+type AuthHandler func(docName, token string) error
+
+// StatelessHandler is the optional callback invoked when a Conn
+// receives a MessageStateless or MessageBroadcastStateless
+// envelope. The broadcast variant additionally triggers a
+// broadcast of the same envelope to other conns on the doc.
+//
+// The handler runs synchronously on the read loop's goroutine —
+// long-running work should be dispatched elsewhere.
+type StatelessHandler func(docName, payload string)
+
 // Conn is the per-connection sync state machine. It owns no
 // transport — Send and Broadcast are caller-supplied. The package
 // tests exercise it with in-memory channels; the server/ package
@@ -49,12 +69,29 @@ type Conn struct {
 	// generates this (typically a random string or remote addr).
 	ID string
 
+	// DocName is the docName this connection was bound to at
+	// upgrade time. Forwarded to AuthHandler / StatelessHandler.
+	DocName string
+
 	// Send writes one envelope to this connection only.
 	Send Sender
 
 	// Broadcast writes one envelope to every connection on this
 	// doc, including self.
 	Broadcast Broadcaster
+
+	// OnAuthenticate, OnStateless are optional Hocuspocus-extension
+	// hooks. nil = the corresponding message types are silently
+	// dropped (matches the bare y-websocket subset).
+	OnAuthenticate AuthHandler
+	OnStateless    StatelessHandler
+
+	// AuthFailed reports whether this conn was rejected by the
+	// AuthHandler. The transport layer should check after each
+	// HandleFrame call and tear down the WS with code 4401 when
+	// true. The conn does not close itself — that's the transport's
+	// job (the WS-close call needs access to the websocket.Conn).
+	AuthFailed bool
 
 	// controlledClients tracks the awareness clientIDs this
 	// connection has authoritatively introduced. On disconnect
@@ -130,11 +167,62 @@ func (c *Conn) HandleFrame(frame *Frame) error {
 	case MessagePong:
 		// Server doesn't send pings yet; an inbound Pong is a no-op.
 		return nil
+	case MessageAuth:
+		return c.handleAuth(frame)
+	case MessageStateless:
+		if c.OnStateless != nil {
+			c.OnStateless(c.DocName, string(frame.Payload))
+		}
+		return nil
+	case MessageBroadcastStateless:
+		if c.OnStateless != nil {
+			c.OnStateless(c.DocName, string(frame.Payload))
+		}
+		// Fan out the same envelope so other conns receive it.
+		c.Broadcast(EncodeBroadcastStateless(string(frame.Payload)))
+		return nil
+	case MessageClose:
+		// Client-initiated close announcement. We don't act on
+		// the reason here; the transport's read loop will see
+		// the WS close shortly. Return nil — the message is
+		// informational.
+		return nil
+	case MessageSyncStatus:
+		// Informational ack — clients flip a "ready" UI flag on
+		// receipt. Server-side we don't need to do anything.
+		return nil
 	default:
-		// Stateless / BroadcastStateless / Close / SyncStatus / Auth
-		// — not implemented in v0.1, silently drop.
+		// Unknown message type — silently drop for forward-
+		// compatibility with future Hocuspocus extensions.
 		return nil
 	}
+}
+
+func (c *Conn) handleAuth(frame *Frame) error {
+	// Only the AuthToken sub-type carries data we act on (it's the
+	// client's "here is my credential" handshake). The other two
+	// sub-types are server→client responses; a server receiving
+	// them is unusual and we ignore.
+	if frame.AuthSub != AuthToken {
+		return nil
+	}
+	token := string(frame.Payload)
+	if c.OnAuthenticate == nil {
+		// No auth configured — accept silently. Sending
+		// Authenticated lets Hocuspocus clients flip their
+		// internal flag even when the server doesn't care.
+		return c.Send(EncodeAuthAuthenticated())
+	}
+	if err := c.OnAuthenticate(c.DocName, token); err != nil {
+		// Reject — send PermissionDenied + Close. Mark the conn
+		// failed so the transport tears down the WS with code
+		// 4401.
+		_ = c.Send(EncodeAuthPermissionDenied(err.Error()))
+		_ = c.Send(EncodeClose("permission denied: " + err.Error()))
+		c.AuthFailed = true
+		return nil
+	}
+	return c.Send(EncodeAuthAuthenticated())
 }
 
 func (c *Conn) handleSync(frame *Frame) error {

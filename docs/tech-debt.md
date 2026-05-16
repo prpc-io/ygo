@@ -227,12 +227,16 @@
 
 ## Sync protocol / WebSocket server
 
-### Hocuspocus extensions (Auth, Stateless, Close, SyncStatus) not implemented
+### Hocuspocus extensions (resolved)
 
-- **Where:** `internal/sync/handler.go` `HandleFrame` default branch silently drops these message types.
-- **What:** the full Hocuspocus envelope adds 5 message types beyond the bare y-websocket subset (Sync + Awareness + QueryAwareness): MessageAuth (2), MessageStateless (5), MessageBroadcastStateless (6), MessageClose (7), MessageSyncStatus (8). We decode them — DecodeEnvelope returns a Frame with the raw payload — but the dispatcher ignores them. Servers using ygo will not echo Stateless messages back, will not perform auth handshakes, and will not emit SyncStatus acks.
-- **Impact today:** clients that REQUIRE these (Hocuspocus's hosted offering with auth tokens, custom extensions using Stateless for app-level RPC) will not work. Pure y-websocket clients and the Sync+Awareness subset of Hocuspocus clients work fine.
-- **When to address:** v0.2. Auth first (Options.OnAuthenticate callback + MessageClose with permission-denied reason code 4401, per port-note "Auth flow"). Stateless second (Options.OnStateless callback). SyncStatus third (low-priority — ack signal that most clients ignore).
+- **Was:** the full Hocuspocus envelope adds 5 message types beyond the bare y-websocket subset (Auth, Stateless, BroadcastStateless, Close, SyncStatus); `HandleFrame` silently dropped all of them.
+- **Resolved by:**
+  - `internal/sync/protocol.go` adds AuthSubType constants (PermissionDenied=0, Authenticated=1, Token=2) and `CloseStatusUnauthorized = 4401`.
+  - `internal/sync/framing.go` adds encoders + decoders for all 5 types. DecodeEnvelope populates Frame.AuthSub for Auth messages.
+  - `internal/sync/handler.go` adds `OnAuthenticate(docName, token) error` and `OnStateless(docName, payload)` hooks plus `AuthFailed` flag. Auth handler decodes Token sub-type, invokes the callback; on deny sends AuthPermissionDenied + Close and sets AuthFailed. Stateless invokes the callback (no reply). BroadcastStateless also fans out via Broadcast. Close and SyncStatus accepted silently.
+  - `server/server.go` exposes `Options.OnAuthenticate` and `Options.OnStateless`. The readLoop checks `AuthFailed` after each HandleFrame and tears down the WS with `CloseStatusUnauthorized` (4401) when set.
+  - 7 unit tests in `internal/sync/hocuspocus_test.go` plus 3 E2E tests in `server/server_test.go` (deny → 4401 close, accept → Authenticated reply, broadcast-stateless fans out across two clients).
+- **Remaining gaps:** Hocuspocus's `Authentication` extension also supports per-document-permission scoping (`readonly` vs `readwrite`). Our `OnAuthenticate` returns only nil/error; richer permission model can be added when an adopter asks. Tracked separately if it surfaces.
 
 ### Cross-language y-websocket / Hocuspocus fixture (resolved)
 

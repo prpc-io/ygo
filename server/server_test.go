@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
@@ -393,5 +394,112 @@ func TestServer_ConcurrentEdits_AllConverge(t *testing.T) {
 		if arr.Len() < clients*perClient {
 			t.Errorf("client %d: Len = %d, want >= %d", c.doc.ClientID(), arr.Len(), clients*perClient)
 		}
+	}
+}
+
+func TestServer_HocusAuth_DeniesAndCloses4401(t *testing.T) {
+	wsURL, _ := startTestServer(t, server.Options{
+		OriginPatterns: []string{"*"},
+		OnAuthenticate: func(_, token string) error {
+			if token != "good-token" {
+				return errors.New("invalid token")
+			}
+			return nil
+		},
+	})
+
+	// Bad-token client: connects, sends auth, server denies + closes
+	// with WS code 4401.
+	dialURL := strings.TrimRight(wsURL, "/") + "/auth-doc"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	wsConn, _, err := websocket.Dial(ctx, dialURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wsConn.Close(websocket.StatusNormalClosure, "test done")
+
+	// Drain the server's initial SyncStep1 + (optional) Awareness
+	// snapshot — these are sent before any auth handshake check.
+	_, _, _ = wsConn.Read(ctx)
+
+	// Send bad-token auth.
+	if err := wsConn.Write(ctx, websocket.MessageBinary,
+		syncpkg.EncodeAuthToken("bad-token")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read both PermissionDenied + Close frames, then expect a WS
+	// close error with 4401 status on the next Read.
+	for i := 0; i < 4; i++ { // drain up to 4 envelopes
+		_, raw, err := wsConn.Read(ctx)
+		if err != nil {
+			// Close arrived — verify status.
+			closeErr := websocket.CloseStatus(err)
+			if closeErr != syncpkg.CloseStatusUnauthorized {
+				t.Errorf("WS close status = %d, want %d", closeErr, syncpkg.CloseStatusUnauthorized)
+			}
+			return
+		}
+		_ = raw // could decode and inspect, but we only care about the close code
+	}
+	t.Error("read loop never closed; expected 4401 close after deny")
+}
+
+func TestServer_HocusAuth_AcceptsAndProceeds(t *testing.T) {
+	wsURL, _ := startTestServer(t, server.Options{
+		OriginPatterns: []string{"*"},
+		OnAuthenticate: func(_, token string) error {
+			if token != "good-token" {
+				return errors.New("invalid token")
+			}
+			return nil
+		},
+	})
+
+	c := dialClient(t, wsURL, "auth-doc", 9000)
+	defer c.close()
+	c.read(t) // initial SyncStep1
+
+	c.write(t, syncpkg.EncodeAuthToken("good-token"))
+	// Server should reply with Authenticated.
+	reply := c.readUntil(t, func(f *syncpkg.Frame) bool {
+		return f.Type == syncpkg.MessageAuth
+	})
+	if reply.AuthSub != syncpkg.AuthAuthenticated {
+		t.Errorf("AuthSub = %d, want Authenticated", reply.AuthSub)
+	}
+}
+
+func TestServer_HocusStateless_BroadcastsAcrossClients(t *testing.T) {
+	var serverSeen []string
+	wsURL, _ := startTestServer(t, server.Options{
+		OriginPatterns: []string{"*"},
+		OnStateless: func(_, payload string) {
+			serverSeen = append(serverSeen, payload)
+		},
+	})
+
+	a := dialClient(t, wsURL, "rpc-doc", 9100)
+	defer a.close()
+	a.read(t) // initial SyncStep1
+
+	b := dialClient(t, wsURL, "rpc-doc", 9101)
+	defer b.close()
+	b.read(t)
+
+	a.write(t, syncpkg.EncodeBroadcastStateless("ping-1"))
+	// Both clients should see the broadcast (self-included).
+	for label, c := range map[string]*wsClient{"A": a, "B": b} {
+		got := c.readUntil(t, func(f *syncpkg.Frame) bool {
+			return f.Type == syncpkg.MessageBroadcastStateless
+		})
+		if string(got.Payload) != "ping-1" {
+			t.Errorf("%s received %q, want ping-1", label, got.Payload)
+		}
+	}
+
+	if len(serverSeen) != 1 || serverSeen[0] != "ping-1" {
+		t.Errorf("server OnStateless saw %v, want [ping-1]", serverSeen)
 	}
 }
