@@ -216,6 +216,33 @@
 - **Why deferred:** by design — the block layer references these only through pointers and never inspects their internals. Real definitions land with their owning layers.
 - **When to address:** `Branch` with the types layer; `Move` post-MVP per ROADMAP. The `block.Doc` stub stays even after `internal/doc.Doc` lands, because the block layer can't depend on the doc layer (would cycle); we'll bridge them through an interface when sub-document support arrives.
 
+## Persistence layer
+
+### GetStateVector replays the full update log every call
+
+- **Where:** `internal/persist/persist.go` `GetStateVector`.
+- **What:** the helper builds a fresh `Doc`, replays every stored update through `Update.Apply`, then encodes the resulting state vector. Cost is O(total update bytes) per call. y-leveldb sidesteps this by caching the state vector in a `(docName, "sv")` meta row updated alongside each `StoreUpdate`.
+- **Impact today:** correctness is unaffected; large documents (many MB of updates) pay a measurable latency on sync-protocol SV exchanges.
+- **When to address:** when sync server lands and SV requests become hot. Either (a) maintain a meta column updated transactionally with every `StoreUpdate`, or (b) auto-flush at N updates so the replay walks a single snapshot.
+
+### No auto-flush trigger
+
+- **Where:** `internal/persist/sqlite/sqlite.go` `(*Store).Flush`.
+- **What:** compaction is opt-in. Callers that never call `Flush` accumulate one row per `StoreUpdate` indefinitely. The log stays correct (replay produces converged state) but storage grows linearly with edit count.
+- **When to address:** with the sync-server layer, which is the natural place to insert a per-doc heuristic (e.g. "flush after every 100 stored updates"). Until then, library callers either schedule their own periodic flush or accept the growth.
+
+### Update.Apply still uses ErrMissingDependency, blocking interleaved sync
+
+- **Where:** `internal/encoding/update.go` `(*Update).Apply` — already tracked under "Encoding layer" above ("Pending update buffer not implemented").
+- **Cross-reference for persistence:** LoadDoc relays every stored blob into a single transaction; the in-process sequential apply always satisfies dependencies because StoreUpdate appended them in source-causal order. Real network sync (where updates arrive interleaved across clients) hits the missing pending-buffer.
+
+### modernc.org/sqlite dependency pin is fragile
+
+- **Where:** `go.mod`.
+- **What:** to keep `go 1.22` minimum compat we pin `modernc.org/sqlite v1.29.10` plus its transitive `modernc.org/libc@v1.49.3`, `modernc.org/memory@v1.8.0`, `modernc.org/gc/v3@v3.0.0-20240801135723-a856999a2e4a`, `golang.org/x/sys@v0.30.0`. Newer versions of any of these bump the required Go to 1.23+ or 1.25+.
+- **Impact today:** none — tests pass, builds reproducibly.
+- **When to address:** when we deliberately bump the Go minimum (next time the CI matrix retires `1.22`). At that point unpin everything and let `go mod tidy` pick latest.
+
 ## Doc / Transaction layer
 
 ### TransactionMut.Commit lifecycle is a stub

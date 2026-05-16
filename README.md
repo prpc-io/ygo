@@ -18,7 +18,7 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | `internal/types/Array` (Insert / InsertRange / Push / Delete / Get / Len / Range / ToSlice) | done |
 | `internal/types/Text` plain-text (Insert / Delete / String / Length) | done; rich-text formatting deferred ([tech-debt](docs/tech-debt.md)) |
 | `internal/types/Xml*` | not started |
-| Persistence (`Store` interface + `modernc.org/sqlite` reference impl) | not started |
+| Persistence (`Store` interface + `modernc.org/sqlite` reference impl) | done; append-only update log, Flush compaction, LoadDoc / GetStateVector / GetDiff helpers; pure-Go (no CGO) |
 | y-sync protocol (WebSocket framing) | not started |
 | Awareness CRDT | not started |
 | `cmd/ygo-server` (Hocuspocus-compat) | not started |
