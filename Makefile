@@ -52,6 +52,21 @@ lint-install:
 fixtures:
 	cd testdata/gen && npm install --silent && node gen-lib0.mjs
 
+# Run B1-B4 benchmarks. B4 skips unless testdata/b4-trace.json is
+# present (run `make bench-fetch-b4` to download). Use
+# `make bench BENCH=B1_1` to filter; pass `BENCHTIME=5x` for more
+# samples.
+BENCH ?= .
+BENCHTIME ?= 3x
+.PHONY: bench
+bench:
+	$(GO) test -bench=$(BENCH) -benchtime=$(BENCHTIME) -benchmem -timeout=900s ./benchmarks/
+
+# Download the 3.2 MB upstream B4 editing trace. One-shot — gitignored.
+.PHONY: bench-fetch-b4
+bench-fetch-b4:
+	cd testdata/gen && node fetch-b4-trace.mjs
+
 .PHONY: clean
 clean:
 	rm -f coverage.txt coverage.html

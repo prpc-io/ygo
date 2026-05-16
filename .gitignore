@@ -35,3 +35,8 @@ testdata/gen/package-lock.json
 
 # Generated fixtures kept in repo, but exclude WIP scratch
 testdata/scratch/
+
+# B4 real-world editing trace — 3.2 MB, fetched on demand via
+# testdata/gen/fetch-b4-trace.mjs. Too big for the repo; the
+# B4 benchmark skips gracefully when absent.
+testdata/b4-trace.json

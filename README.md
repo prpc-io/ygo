@@ -29,6 +29,7 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | Go → JS reverse-direction wire fixture | done; `cmd/gen-go-fixtures` captures 21 V1 + 21 V2 scenarios (Map / Array / Text / XmlFragment); `testdata/gen/validate-go-fixtures.mjs` proves `Y.applyUpdate` / `Y.applyUpdateV2` accept Go-encoded bytes. All 42 pass; CI fixtures job re-runs on every push |
 | V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.EncodeV2` / `Update.DecodeV2` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; JS Yjs → Go V2 direction proven by 29 cross-language fixture scenarios (Map + Array + Text + RLE-flexing) against `yjs@13.6.20` `Y.encodeStateAsUpdateV2` |
 | Snapshots / undo manager / sub-documents | not started |
+| dmonad/crdt-benchmarks B1-B4 port | done; `benchmarks/` package implements B1.1-B1.11, B2.1-B2.4, B3.1/3/4 (B3.2 blocked on Any-TLV object support — tech-debt) and B4 (260k-edit real-world LaTeX trace). Baseline numbers in [BENCHMARKS.md](BENCHMARKS.md). V2 wire 6-8× smaller than V1 on RLE-friendly workloads; op-throughput gap vs yrs traced to search-marker absence |
 
 Roadmap and per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md).
 
@@ -38,7 +39,7 @@ Roadmap and per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-no
 2. **Idiomatic Go API.** Channels for events, explicit transactions, `error` returns.
 3. **Pure Go.** No CGO. `gomobile bind` works for iOS/Android.
 4. **Pluggable persistence** with `modernc.org/sqlite` reference implementation.
-5. **Performance within 2x** of [yrs](https://github.com/y-crdt/y-crdt) on `dmonad/crdt-benchmarks` B1-B4.
+5. **Performance within 2x** of [yrs](https://github.com/y-crdt/y-crdt) on `dmonad/crdt-benchmarks` B1-B4. See [BENCHMARKS.md](BENCHMARKS.md) for current baseline.
 
 ## Non-goals
 

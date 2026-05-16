@@ -83,6 +83,7 @@
 - **What:** every operation that needs to translate a user-facing index into a *Item walks `branch.Start` linearly. Operations on long arrays (10K+ elements) become O(N) per op.
 - **Why deferred:** per `docs/yrs-port-notes/types-array.md` finding 1, yrs main has no search-marker cache either. We're matching the executable spec; adding the cache is a pure-Go optimization unblocked by benchmarks, not a wire-format dependency.
 - **When to address:** when a real workload shows position resolution in hot paths. Implementation: bounded-LRU `[]struct{ idx uint64; item *Item }` on Branch, updated heuristically when traversal cost exceeds a threshold (~80 entries per yrs INTERNALS.md).
+- **Concrete impact** (from `BENCHMARKS.md`): B4 real-world LaTeX trace (259,778 edits) takes ~84 s in ygo vs published sub-10 s in yrs — search markers are the primary remaining algorithmic gap toward DESIGN.md's "within 2× of yrs" target.
 
 ### Array.Range value extraction handles only Any/String/Binary
 
@@ -371,6 +372,22 @@
   1. CI workflow now pins `version: v1.64.8` (was `latest`). Reproducible.
   2. Root `Makefile` exposes `make check` (gofmt + vet + test + lint) and `make lint-install` (`go install ...@v1.64.8`) for the matching local linter.
 - **Remaining:** add a `pre-push` hook installer once collaborators arrive. Tracked separately if needed.
+
+## Benchmarks
+
+### B3.2 (Many clients set Object in shared Map) currently skipped
+
+- **Where:** `benchmarks/b3_test.go` `BenchmarkB3_2_ManyClientsSetObject`.
+- **What:** the upstream B3.2 spec writes a JSON `{a:1, b:"x"}` object as the Map value. Our `EncodeAny` does not support `map[string]any` payloads (panics with "unsupported value type"). The same gap blocks any Any TLV containing arrays / objects / buffers / bigint / float32.
+- **Why deferred:** Any TLV was scoped to scalars in the MVP — see "Any type is a placeholder" entry above. Closing this unblocks B3.2 (and unlocks objects-as-values for adopters using Map for JSON-shaped configuration).
+- **When to address:** with the broader Any TLV variant work. Implementation: extend `internal/encoding/any_codec.go` to handle the upstream lib0 Any tag set (tags 116-127 covering array / object / undefined / float32 / bigint / buffer).
+
+### Cross-implementation benchmark harness (vs yrs)
+
+- **Where:** missing; tracked here so DESIGN.md's "within 2× of yrs" target stays explicit.
+- **What:** `BENCHMARKS.md` documents ygo absolute numbers, but a side-by-side run vs yrs (and ideally automerge / loro / diamond-types) under identical hardware would let us prove the 2× claim or pinpoint exact gaps per ID.
+- **Why deferred:** the upstream `dmonad/crdt-benchmarks` JS runner shells out to native modules; integrating ygo would need a Go-side adapter that produces the same JSON output the JS aggregator consumes.
+- **When to address:** opportunistic; the per-impl absolute numbers already inform optimization priorities (search markers → B4; Any TLV objects → B3.2).
 
 ## Open questions captured but not resolved
 
