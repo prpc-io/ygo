@@ -16,9 +16,9 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | `internal/utf16` (UTF-16 length / byte-offset / surrogate-aware split) | done |
 | `internal/types/Map` (Set / Get / Delete / Has / Len / Range / Clear + SetMap / SetArray / SetText) | done; nested-type construction supported |
 | `internal/types/Array` (Insert / InsertRange / Push / Delete / Get / Len / Range / ToSlice + InsertMap / InsertArray / InsertText) | done; nested-type construction supported |
-| `internal/types/Text` plain-text (Insert / Delete / String / Length) | done; rich-text formatting deferred ([tech-debt](docs/tech-debt.md)) |
+| `internal/types/Text` (Insert / Delete / String / Length + InsertWithAttributes / Format / InsertEmbed / Range / ToDelta) | done; rich-text formatting + embeds; ApplyDelta deferred ([tech-debt](docs/tech-debt.md)) |
 | Nested-type construction (Map-in-Map, Array-in-Map, etc., to arbitrary depth) | done; ContentType wire format + Repair ParentID resolution + pending-queue retry |
-| `internal/types/Xml*` (XmlFragment, XmlElement, XmlText) | not started; v1.0 scope, blocked on rich-text Text only — nested-type construction is now in place |
+| `internal/types/Xml*` (XmlFragment, XmlElement, XmlText) | not started; all prerequisites (nested-type construction + rich-text Text) now in place; remaining work is the wrapper API itself |
 | Persistence (`Store` interface + `modernc.org/sqlite` reference impl) | done; append-only update log, Flush compaction, LoadDoc / GetStateVector / GetDiff helpers; pure-Go (no CGO) |
 | y-sync protocol (`internal/sync`) | done; bare y-websocket subset (Sync + Awareness + QueryAwareness) — interoperates with y-websocket and the Sync subset of Hocuspocus clients; Auth + Stateless + Close + SyncStatus deferred to v0.2 |
 | Awareness (`internal/awareness`) | done; LWW presence map, JSON wire payload per y-protocols, self-eviction defense, SweepOutdated; cross-language JS y-protocols fixture deferred ([tech-debt](docs/tech-debt.md)) |

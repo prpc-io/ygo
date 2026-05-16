@@ -13,8 +13,9 @@ import (
 //
 // Mirrors yrs/src/block.rs:1844-1872 ItemContent::encode.
 //
-// Supported in this commit: KindAny, KindString, KindBinary, KindDeleted, KindType.
-// Skipped: KindEmbed, KindFormat, KindDoc, KindMove, KindJSON.
+// Supported in this commit: KindAny, KindString, KindBinary,
+// KindDeleted, KindType, KindFormat, KindEmbed.
+// Skipped: KindDoc, KindMove, KindJSON.
 // All deferred kinds panic on encode rather than emit silently-wrong
 // bytes.
 func EncodeContent(buf []byte, c block.Content) []byte {
@@ -31,6 +32,26 @@ func EncodeContent(buf []byte, c block.Content) []byte {
 		return lib0.WriteVarUint8Array(buf, c.Bytes)
 	case block.KindDeleted:
 		return lib0.WriteVarUint(buf, c.DeletedLen)
+	case block.KindEmbed:
+		// Single Any payload — yjs/src/structs/ContentEmbed.js write.
+		// We carry Embed's payload in Anys[0]; if missing, treat as nil
+		// (encoded as Any-Null tag).
+		var v block.Any
+		if len(c.Anys) > 0 {
+			v = c.Anys[0]
+		}
+		return EncodeAny(buf, v)
+	case block.KindFormat:
+		// varstring(key) + Any(value) — yjs ContentFormat.js write.
+		// Anys[0] is the value (may be nil to signal clear-attribute,
+		// which encodes as the Any-Null tag — receiver interprets the
+		// null in updateCurrentAttributes per types-text-rich.md gotcha 8).
+		buf = lib0.WriteVarString(buf, c.FormatKey)
+		var v block.Any
+		if len(c.Anys) > 0 {
+			v = c.Anys[0]
+		}
+		return EncodeAny(buf, v)
 	case block.KindType:
 		// ContentType payload: varuint(typeRef) + optional
 		// varstring(name) for XmlElement (refID 3) and XmlHook
@@ -97,6 +118,23 @@ func DecodeContent(buf []byte, refNum uint8) (block.Content, []byte, error) {
 			return block.Content{}, buf, err
 		}
 		return block.Content{Kind: block.KindDeleted, DeletedLen: v}, buf[n:], nil
+	case block.KindEmbed:
+		v, tail, err := DecodeAny(buf)
+		if err != nil {
+			return block.Content{}, buf, err
+		}
+		return block.Content{Kind: block.KindEmbed, Anys: []block.Any{v}}, tail, nil
+	case block.KindFormat:
+		key, n, err := lib0.ReadVarString(buf)
+		if err != nil {
+			return block.Content{}, buf, err
+		}
+		buf = buf[n:]
+		v, tail, err := DecodeAny(buf)
+		if err != nil {
+			return block.Content{}, buf, err
+		}
+		return block.Content{Kind: block.KindFormat, FormatKey: key, Anys: []block.Any{v}}, tail, nil
 	case block.KindType:
 		// Mirror of EncodeContent.KindType. Build an empty Branch
 		// with the wire-supplied TypeRef. The Branch.Item back-

@@ -96,12 +96,11 @@
 - **What:** Y.Array supports `move(srcIdx, dstIdx)` to relocate an element. yrs implements via the ContentMove variant; we do not encode/decode/integrate Move at all.
 - **When to address:** post-MVP per ROADMAP. Pre-conditions: ContentMove encode/decode in encoding layer, Move integration in Item.Integrate (deferred per integrate.md).
 
-### Text rich-text formatting not implemented
+### Text rich-text formatting (mostly resolved)
 
-- **Where:** missing on `internal/types/text.go`.
-- **What:** `Text.format(idx, len, attrs)`, `Text.applyDelta(delta)`, `Text.insertWithAttributes`, `Text.insertEmbed`, the ContentFormat marker emit/consume, and the Quill-compatible TextEvent.delta reconstruction. Per types-text.md §11 these are the entire rich-text surface.
-- **Impact today:** `Text.Insert` / `Text.Delete` / `Text.String` cover the plain-text path used by simple chat / pad / markdown-as-text scenarios; rich-text editors (Tiptap, ProseMirror) need the format API.
-- **When to address:** before adopters using rich-text editors come online. Will be a substantial commit (~600-1000 LOC) plus encoder/decoder coverage of `KindFormat` content.
+- **Was:** Text supported only plain-text Insert/Delete/String/Length. No format markers, no embeds, no Quill-style delta API.
+- **Resolved by:** `internal/types/text_format.go` ships `Text.InsertWithAttributes(idx, str, attrs)`, `Text.Format(idx, len, attrs)`, `Text.InsertEmbed(idx, value)`, `Text.Range(fn)`, `Text.ToDelta()`. KindFormat and KindEmbed encode/decode wired into `internal/encoding/content_codec.go`. Tests cover open/close markers, format on existing range, attribute-clearing, embeds in delta, cross-client convergence of formatting.
+- **Remaining:** `Text.ApplyDelta(delta []DeltaOp)` — the Quill batch-mutation API. Not strictly needed for adopters who call the underlying methods directly (Insert / Format / InsertEmbed), but ProseMirror / Tiptap bindings convert their internal change descriptions to Yjs via ApplyDelta. Estimated ~150-250 LOC plus tests; track for v0.2.
 
 ### Text.Range / Text iteration not implemented
 
@@ -276,14 +275,13 @@
 - **What:** Yjs XML types model DOM-style trees used by ProseMirror, Tiptap, BlockNote, and other rich-text editors. `XmlFragment` is a root container (Array-like) of child nodes; `XmlElement` carries a `nodeName` plus an attribute map (Map-like) plus children (Array-like); `XmlText` is `Text` with formatting markers and can be a child of `XmlElement`. `XmlHook` embeds an arbitrary opaque value and is JS-legacy (post-MVP per yrs).
 - **Wire format additions still needed:**
   1. Extend `ContentType` encoder/decoder to emit/parse the `varstring(nodeName)` after the type-refs byte for XML element / hook variants — already wired for `TypeRefXmlElement` (3) and `TypeRefXmlHook` (5) in `internal/encoding/content_codec.go`, but no callers yet build XML branches with `Name` set.
-  2. `KindFormat` content variant (rich-text formatting markers) — XmlText carries these inline.
-- **Prerequisite chain (remaining order):**
-  1. ~~**Nested-type construction in the types layer**~~ — **done**. ParentID resolution + ContentType encode/decode + Map.SetMap/SetArray/SetText + Array.InsertMap/InsertArray/InsertText shipped. XML children integrate end-to-end once their wrapper types exist.
-  2. **Rich-text formatting on Text** — tracked under "Text rich-text formatting not implemented" (~600-1000 LOC). XmlText shares the same Format-marker machinery; can't ship XmlText without it.
+- **Prerequisite chain (remaining):**
+  1. ~~**Nested-type construction**~~ — **done**.
+  2. ~~**Rich-text formatting on Text** (KindFormat + KindEmbed encode/decode + Text.Format / InsertWithAttributes / InsertEmbed / Range / ToDelta)~~ — **done**. XmlText reuses the same machinery.
   3. **XML types themselves** — `XmlFragment`, `XmlElement`, `XmlText` wrappers (~400-600 LOC). XmlElement.GetAttribute / SetAttribute / RemoveAttribute reuse Map machinery on the attribute sub-branch; child management reuses Array machinery on the children sub-branch. The wire-format machinery is already in place; this is purely the user-facing API layer.
-- **Total estimated effort remaining:** ~1000-1600 LOC across 2 commits (rich-text Text + XML types).
-- **When to address:** v1.0 milestone alongside rich-text Text. Until adopters using ProseMirror / Tiptap / BlockNote show up with a concrete ask, the priority sits below other open work.
-- **Acknowledgement:** XML support is the gateway to the ~80% of Yjs JavaScript adoption that uses it for collaborative document editors. Shipping it unlocks the largest adoption pool in one move; until then ygo is suitable for Map / Array / plain-Text / nested-Map+Array+Text workloads only.
+- **Total estimated effort remaining:** ~400-600 LOC in a single commit.
+- **When to address:** v1.0 milestone. With both prerequisites in place, this is now the smallest remaining gap blocking ProseMirror / Tiptap / BlockNote adoption.
+- **Acknowledgement:** XML support is the gateway to the ~80% of Yjs JavaScript adoption that uses it for collaborative document editors. Shipping it unlocks the largest adoption pool in one move; until then ygo is suitable for Map / Array / Text (plain + rich) / nested-Map+Array+Text workloads only.
 
 ## Persistence layer
 

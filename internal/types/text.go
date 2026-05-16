@@ -80,11 +80,14 @@ func (t *Text) Insert(txn *doc.TransactionMut, idx uint64, str string) error {
 	if err != nil {
 		return err
 	}
-	// Skip past tombstones at the cursor — matches text.rs:219-225
-	// "just like Yjs does." YATA convergence requires concurrent
-	// inserts at the same logical index to attach to the same live
-	// successor as right_origin.
-	for right != nil && right.IsDeleted() {
+	// Skip past tombstones AND format markers at the cursor — matches
+	// text.rs:219-225 "just like Yjs does." YATA convergence requires
+	// concurrent inserts at the same logical index to attach to the
+	// same live successor as right_origin; skipping format markers
+	// in addition means plain Insert at the end of a formatted range
+	// produces unformatted text (the close marker has already taken
+	// effect).
+	for right != nil && (right.IsDeleted() || right.Content.Kind == block.KindFormat) {
 		left = right
 		right = right.Right
 	}
