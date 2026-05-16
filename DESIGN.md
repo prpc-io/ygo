@@ -135,6 +135,7 @@ github.com/Deln0r/ygo/
   persist/sqlite/         # modernc.org/sqlite reference impl (public)
   server/                 # WebSocket sync server (public; http.Handler)
   cmd/ygo-server/         # stand-alone server binary
+  gomobile/               # bytes-only subset for `gomobile bind` (iOS/Android)
   internal/lib0/          # varint primitives
   internal/block/         # Item / Branch / TypeRef / Repair / Integrate
   internal/store/         # BlockStore
