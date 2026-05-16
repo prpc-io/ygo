@@ -20,7 +20,7 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | `internal/types/Xml*` | not started |
 | Persistence (`Store` interface + `modernc.org/sqlite` reference impl) | done; append-only update log, Flush compaction, LoadDoc / GetStateVector / GetDiff helpers; pure-Go (no CGO) |
 | y-sync protocol (WebSocket framing) | not started |
-| Awareness CRDT | not started |
+| Awareness (`internal/awareness`) | done; LWW presence map, JSON wire payload per y-protocols, self-eviction defense, SweepOutdated; cross-language JS y-protocols fixture deferred ([tech-debt](docs/tech-debt.md)) |
 | `cmd/ygo-server` (Hocuspocus-compat) | not started |
 | `gomobile bind` build target | not started |
 | Go → JS reverse-direction wire fixture | not started; tracked in [docs/tech-debt.md](docs/tech-debt.md) |

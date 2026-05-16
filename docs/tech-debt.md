@@ -216,6 +216,29 @@
 - **Why deferred:** by design — the block layer references these only through pointers and never inspects their internals. Real definitions land with their owning layers.
 - **When to address:** `Branch` with the types layer; `Move` post-MVP per ROADMAP. The `block.Doc` stub stays even after `internal/doc.Doc` lands, because the block layer can't depend on the doc layer (would cycle); we'll bridge them through an interface when sub-document support arrives.
 
+## Awareness layer
+
+### Cross-language JS y-protocols fixture not yet captured
+
+- **Where:** missing `testdata/gen/gen-awareness.mjs`, `testdata/awareness-updates.json`, Go fixture test in `internal/awareness/`.
+- **What:** the other CRDT layers (Map, Array, Text, V1 update) each have a captured JS-Yjs fixture set proving Go decodes bytes JS produces. Awareness has only the hand-built byte fixture in `TestWireFixture_KnownBytesDecode` plus pure-Go round-trip tests. No proof against `y-protocols`'s `encodeAwarenessUpdate` output.
+- **Why this matters:** y-protocols uses `JSON.stringify` for the state payload. JS may canonicalize object key order differently than Go's `encoding/json` (in practice both are unspecified), and the "null" sentinel is a string literal — divergence here would silently break JS interop. The byte fixture proves the layout but not against a real reference encoder.
+- **When to address:** before the WebSocket sync server (Hocuspocus-compat) ships, since the server's value proposition is byte-equivalence with JS clients. Pre-conditions: add `y-protocols` to `testdata/gen/package.json`; write `gen-awareness.mjs` capturing add/update/remove/multi-client scenarios; add `awareness_fixtures_test.go`; wire into the CI fixtures job.
+
+### Apply returns updated for self-eviction defense bump
+
+- **Where:** `internal/awareness/awareness.go` `Apply` self-eviction branch.
+- **What:** when a remote tries to evict the local client and the local clock is bumped instead, we record the local clientID in `Summary.Updated`. yrs records a similar entry in its `AwarenessUpdateSummary::updated` (`awareness.rs:418`); JS records it as part of the regular update flow. The Updated reporting is semantically slightly incorrect — nothing about the local state actually changed except the clock — but matches the reference behaviour.
+- **Impact today:** observers see a no-op Update event with the local clientID. Cosmetic only.
+- **When to address:** if observers do something behavioural with Updated entries (e.g. re-render UI for the local cursor). Until then, consistency with reference impl wins.
+
+### No background timeout sweep
+
+- **Where:** `internal/awareness/awareness.go` — `SweepOutdated` is exposed but no goroutine drives it.
+- **What:** the y-protocols JS implementation runs an internal `setInterval` every 3 seconds. yrs leaves it to the embedder. We follow yrs.
+- **Impact today:** none — `SweepOutdated` is documented; callers wrap it in a `time.Ticker` when they need it.
+- **When to address:** never, unless ergonomics complaints arrive. Background goroutines inside passive data structures violate the "no surprise lifecycle" Go convention.
+
 ## Persistence layer
 
 ### GetStateVector replays the full update log every call
