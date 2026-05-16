@@ -26,7 +26,7 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | `cmd/ygo-server` (Hocuspocus-compat binary) | done; stand-alone WS server with optional sqlite persistence via `-store` flag |
 | `gomobile/` (bytes-only subset for iOS/Android) | done; bindable `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods only; pure-Go (no CGO); `gomobile bind` toolchain verification deferred ([tech-debt](docs/tech-debt.md)) |
 | `gomobile bind` build target | not started |
-| Go → JS reverse-direction wire fixture | not started; tracked in [docs/tech-debt.md](docs/tech-debt.md) |
+| Go → JS reverse-direction wire fixture | done; `cmd/gen-go-fixtures` captures 21 V1 + 21 V2 scenarios (Map / Array / Text / XmlFragment); `testdata/gen/validate-go-fixtures.mjs` proves `Y.applyUpdate` / `Y.applyUpdateV2` accept Go-encoded bytes. All 42 pass; CI fixtures job re-runs on every push |
 | V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.EncodeV2` / `Update.DecodeV2` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; JS Yjs → Go V2 direction proven by 29 cross-language fixture scenarios (Map + Array + Text + RLE-flexing) against `yjs@13.6.20` `Y.encodeStateAsUpdateV2` |
 | Snapshots / undo manager / sub-documents | not started |
 

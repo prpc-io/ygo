@@ -1,0 +1,233 @@
+{
+  "generator": "ygo (V2)",
+  "scenarios": [
+    {
+      "description": "empty Map",
+      "go_client_id": 100,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "00000000000001000000000000"
+    },
+    {
+      "description": "single Map.Set string",
+      "go_client_id": 101,
+      "root_kind": "map",
+      "root_name": "settings",
+      "update_hex": "000002a50100000128100d73657474696e6773636f6c6f7208050101000101010100770372656400",
+      "expected_map": {
+        "color": "red"
+      }
+    },
+    {
+      "description": "Map across primitive value types",
+      "go_client_id": 103,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "000002a70100000128251d78737869786678625f7472756578625f66616c7365786e756c6c76616c41050601070107010100024104010600770568656c6c6f7d2a7b40091eb851eb851f78797e00",
+      "expected_map": {
+        "b_false": false,
+        "b_true": true,
+        "f": 3.14,
+        "i": 42,
+        "nullval": null,
+        "s": "hello"
+      }
+    },
+    {
+      "description": "Map LWW chain on same key",
+      "go_client_id": 104,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "000003e8010102000200032800a80502786b41000101000241010103007705666972737477067365636f6e64770574686972640168010001",
+      "expected_map": {
+        "k": "third"
+      }
+    },
+    {
+      "description": "Map.Set + Map.Delete",
+      "go_client_id": 105,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "000002a9010000012807047861786241020101000241000102007705616c7068617704626574610169010000",
+      "expected_map": {
+        "b": "beta"
+      }
+    },
+    {
+      "description": "Map with unicode keys and values",
+      "go_client_id": 107,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "000002ab0100000128140f78d0bad0bbd18ed18778656d6f6a69010401050101000241000102007710d0b7d0bdd0b0d187d0b5d0bdd0b8d0b577026f6b00",
+      "expected_map": {
+        "emoji": "ok",
+        "ключ": "значение"
+      }
+    },
+    {
+      "description": "empty Array",
+      "go_client_id": 200,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "00000000000001000000000000"
+    },
+    {
+      "description": "Array.Push single",
+      "go_client_id": 201,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "00000289030000010803017801010100010101010077046f6e6c7900",
+      "expected_array": [
+        "only"
+      ]
+    },
+    {
+      "description": "Array.Push batch packed",
+      "go_client_id": 202,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0000028a030000010803017801010100010501010077016177016277016377016477016500",
+      "expected_array": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e"
+      ]
+    },
+    {
+      "description": "Array with various value types",
+      "go_client_id": 203,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0000028b03000001080301780101010001060101007701737d2a7b40091eb851eb851f78797e00",
+      "expected_array": [
+        "s",
+        42,
+        3.14,
+        true,
+        false,
+        null
+      ]
+    },
+    {
+      "description": "Array insert in middle (split)",
+      "go_client_id": 204,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "000003cc030202020001040508008800c8030178010101000342000101030077016177016277016377016477015800",
+      "expected_array": [
+        "a",
+        "b",
+        "X",
+        "c",
+        "d"
+      ]
+    },
+    {
+      "description": "Array delete range across packed run",
+      "go_client_id": 206,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "000003ce03010202060003080088030178010101000302030101030077016177016277016377016477016577016601ce01010202",
+      "expected_array": [
+        "a",
+        "b",
+        "f"
+      ]
+    },
+    {
+      "description": "empty Text",
+      "go_client_id": 300,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "00000000000001000000000000"
+    },
+    {
+      "description": "Text insert ASCII",
+      "go_client_id": 301,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000002ad040000010409067868656c6c6f01050101000001010000",
+      "expected_text": "hello",
+      "expected_length": 5
+    },
+    {
+      "description": "Text two inserts",
+      "go_client_id": 302,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000003ee040001080003040084100c7868656c6c6f20776f726c640105060101000001020000",
+      "expected_text": "hello world",
+      "expected_length": 11
+    },
+    {
+      "description": "Text Cyrillic (BMP)",
+      "go_client_id": 306,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000002b20400000104100d78d0bfd180d0b8d0b2d0b5d18201060101000001010000",
+      "expected_text": "привет",
+      "expected_length": 6
+    },
+    {
+      "description": "Text emoji (non-BMP surrogate pair)",
+      "go_client_id": 307,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000002b304000001040a077861f09f98806201040101000001010000",
+      "expected_text": "a😀b",
+      "expected_length": 4
+    },
+    {
+      "description": "Text delete range",
+      "go_client_id": 305,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000003f1040001080003040084100c7868656c6c6f20776f726c640105060101000001020001b102010505",
+      "expected_text": "hello",
+      "expected_length": 5
+    },
+    {
+      "description": "XmlFragment empty",
+      "go_client_id": 400,
+      "root_kind": "xml",
+      "root_name": "frag",
+      "update_hex": "00000000000001000000000000"
+    },
+    {
+      "description": "XmlFragment with two elements",
+      "go_client_id": 401,
+      "root_kind": "xml",
+      "root_name": "frag",
+      "update_hex": "0002000203d10600010000030700870f0b667261676469767370616e04030401010243000001020000",
+      "expected_xml_children": [
+        {
+          "kind": "element",
+          "name": "div"
+        },
+        {
+          "kind": "element",
+          "name": "span"
+        }
+      ]
+    },
+    {
+      "description": "XmlFragment with element + text child",
+      "go_client_id": 402,
+      "root_kind": "xml",
+      "root_name": "frag",
+      "update_hex": "00010003d20601020002000507008700040e0a667261677068656c6c6f040105030100000203060001030000",
+      "expected_xml_children": [
+        {
+          "kind": "element",
+          "name": "p"
+        },
+        {
+          "kind": "text",
+          "text": "hello"
+        }
+      ]
+    }
+  ]
+}

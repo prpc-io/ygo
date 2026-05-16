@@ -172,12 +172,14 @@
 - **Resolved by:** Phase B3 fixture wiring. `testdata/yjs-updates.json` captures 8 scenarios (empty doc, single set, multi-key set, all primitive value types, LWW chain, set+delete, set→delete→set, unicode keys/values). `internal/encoding/fixture_test.go::TestFixtures_DecodeApplyJSYjsUpdates` decodes each via DecodeUpdate, applies to a fresh Doc via Update.Apply, and verifies the resulting Map state matches the expected JSON. All 8 pass under `-race`. CI workflow's `fixtures` job regenerates and runs both lib0 and yjs-update tests on every push.
 - **What this proves:** bytes that JS Yjs (yjs@13.6.20) produces via `Y.encodeStateAsUpdate(doc)` are byte-equivalent to what our DecodeUpdate accepts as input. The half of binary-protocol-compat that matters most for adoption — being able to receive updates from existing JS Yjs deployments — is verified end-to-end.
 
-### Cross-language Go → JS Yjs direction not yet tested
+### Cross-language Go → JS Yjs direction (resolved)
 
-- **Where:** missing `testdata/gen/verify-go-bytes.mjs` + Go test that exec's Node.
-- **What:** the reverse direction (Go encodes → JS decodes via `Y.applyUpdate(doc, bytes)`) is not yet tested. JS Yjs's decoder is more permissive than yrs's (it accepts a wider range of valid encodings), so Go-encoded bytes that round-trip in pure Go may still fail to apply on the JS side if our wire format diverges in any subtle way.
-- **Why deferred:** requires Go test runner to exec a Node subprocess, pipe bytes via stdin/stdout or temp files, and parse JSON results. Not hard, but enough infrastructure that splitting from direction-one keeps each commit reviewable.
-- **When to address:** the next-likely real-world failure mode is a Hocuspocus-compat server scenario where JS clients download Go-encoded snapshots. Address before that lands.
+- **Was:** only JS → Go direction proven. Bytes Go encoded via `EncodeStateAsUpdate` / `EncodeStateAsUpdateV2` had no JS-side validation; subtle wire-format divergence could pass Go round-trip yet fail on JS adopters.
+- **Resolved by:** file-based fixture pipeline.
+  - `cmd/gen-go-fixtures/` walks 21 scenarios (Map / Array / Text / XmlFragment, mixed primitive types, unicode, multi-byte, deletes) with pinned ClientIDs, captures bytes via both V1 and V2 encoders, writes `testdata/go-updates.json` + `testdata/go-update-v2-fixtures.json`.
+  - `testdata/gen/validate-go-fixtures.mjs` reads both fixtures, applies via `Y.applyUpdate` / `Y.applyUpdateV2` against fresh `Y.Doc`s, verifies live state matches the expected snapshot recorded by Go. All 42 scenarios (21 V1 + 21 V2) pass.
+  - CI fixtures job regenerates Go fixtures + runs validator on every push; git-diff drift check catches byte-level regressions.
+- **What this proves:** binary-protocol compat in BOTH directions for V1 AND V2. JS clients can apply Go-encoded snapshots; Go clients can apply JS-encoded snapshots. Hocuspocus-compat server scenarios where JS clients download Go state are now wire-validated.
 
 ### Surrogate-pair split (resolved)
 
@@ -264,7 +266,7 @@
   2. `internal/encoding/encoder_v2.go` + `decoder_v2.go` — column buffer plumbing, 15 round-trip tests (`9104ab8`).
   3. `internal/encoding/update_v2.go` — `Update.EncodeV2` / `Update.DecodeV2` / `ApplyUpdateV2` / `EncodeStateAsUpdateV2` / `EncodeDiffV2` + `EncodeContentV2` / `DecodeContentV2` + V2 DeleteSet diff stream. 10 tests cover Map / Array / Text / DeleteSet / XmlElement / cross-client / incremental diff / V1↔V2 incompat / bad-flag rejection / empty-doc baseline (`3f37287`).
   4. Cross-language V2 fixtures: `testdata/gen/gen-yjs-update-v2.mjs` captures `Y.encodeStateAsUpdateV2` for 29 scenarios (24 mirroring the V1 set + 5 RLE-flexing scenarios that exercise many-keys / large pushes / long strings / monotonic-delta runs). `internal/encoding/v2_fixtures_test.go::TestFixtures_DecodeApplyJSYjsV2Updates` decodes each via `DecodeUpdateV2`, applies via `Update.Apply` (shared with V1), verifies state. All 29 pass under `-race`. CI workflow extended.
-- **What still defers:** the reverse direction (Go encodes V2 → JS `Y.applyUpdateV2` decodes) — same gap as V1 reverse-direction (tracked under "Reverse direction Go → JS"). Hocuspocus V2 sync envelope message codes (4 = SyncStep V2, 5 = SyncDone V2) are not wired into the server; current server uses V1 envelope codes (1/2/3). Adopters needing V2 sync would lift the envelope first.
+- **What still defers:** Hocuspocus V2 sync envelope message codes (4 = SyncStep V2, 5 = SyncDone V2) are not wired into the server; current server uses V1 envelope codes (1/2/3). Adopters needing V2 sync would lift the envelope first. The V2 codec itself is wire-compat-proven in both directions via `cmd/gen-go-fixtures` + `validate-go-fixtures.mjs`.
 
 ## Awareness layer
 
