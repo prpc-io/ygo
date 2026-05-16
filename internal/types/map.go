@@ -149,10 +149,80 @@ func (m *Map) Clear(txn *doc.TransactionMut) {
 	}
 }
 
-// extractValue unpacks a Content into the user-visible value. Only
-// the variants the first Map port emits are handled; richer kinds
-// (Type, Doc, Embed, etc.) require the types-layer recursive
-// construction we have not built yet.
+// SetMap inserts a freshly-constructed nested Map under key and
+// returns the wrapper bound to it. Subsequent edits via the returned
+// *Map are addressed to this map-key slot in m; concurrent peers
+// see the same nested-map structure once they apply the resulting
+// updates.
+//
+// Per docs/yrs-port-notes/nested-types.md §5 — recommended API over
+// overloading Set(any) so the caller never has to type-assert the
+// returned wrapper.
+func (m *Map) SetMap(txn *doc.TransactionMut, key string) *Map {
+	inner := &block.Branch{
+		TypeRef: block.TypeRefMap,
+		Map:     map[string]*block.Item{},
+	}
+	m.setNested(txn, key, inner)
+	return &Map{branch: inner}
+}
+
+// SetArray inserts a freshly-constructed nested Array under key.
+func (m *Map) SetArray(txn *doc.TransactionMut, key string) *Array {
+	inner := &block.Branch{TypeRef: block.TypeRefArray}
+	m.setNested(txn, key, inner)
+	return &Array{branch: inner}
+}
+
+// SetText inserts a freshly-constructed nested Text under key
+// (plain-text only — see tech-debt.md for rich-text formatting).
+func (m *Map) SetText(txn *doc.TransactionMut, key string) *Text {
+	inner := &block.Branch{TypeRef: block.TypeRefText}
+	m.setNested(txn, key, inner)
+	return &Text{branch: inner}
+}
+
+// setNested is the shared scaffolding for SetMap/SetArray/SetText:
+// build an Item with KindType content and the supplied Branch,
+// chain off the existing tail at this key (Origin = left.LastID()),
+// push to store, integrate. The Item.Integrate KindType arm wires
+// Branch.Item back to the Item.
+func (m *Map) setNested(txn *doc.TransactionMut, key string, inner *block.Branch) {
+	clientID := txn.Doc().ClientID()
+	clock := txn.Store().GetClock(clientID)
+
+	var origin *block.ID
+	var left *block.Item
+	if existing, ok := m.branch.Map[key]; ok {
+		left = existing
+		lid := left.LastID()
+		origin = &lid
+	}
+
+	keyCopy := key
+	item := &block.Item{
+		ID:        block.ID{Client: clientID, Clock: clock},
+		Len:       1,
+		Origin:    origin,
+		Left:      left,
+		Content:   block.Content{Kind: block.KindType, Branch: inner},
+		Parent:    block.Parent{Kind: block.ParentBranch, Branch: m.branch},
+		ParentSub: &keyCopy,
+		Flags:     block.FlagCountable,
+	}
+
+	txn.Store().PushBlock(item)
+	if dropped := item.Integrate(txn, 0); dropped {
+		txn.Delete(item)
+	}
+}
+
+// extractValue unpacks a Content into the user-visible value.
+//
+// For KindType the returned wrapper is the right concrete type
+// based on Branch.TypeRef — *Map for TypeRefMap, *Array for
+// TypeRefArray, *Text for TypeRefText. Returns nil for branch
+// types we have not implemented yet (Xml*, Doc).
 func extractValue(c block.Content) any {
 	switch c.Kind {
 	case block.KindAny:
@@ -163,6 +233,18 @@ func extractValue(c block.Content) any {
 		return c.Str
 	case block.KindBinary:
 		return c.Bytes
+	case block.KindType:
+		if c.Branch == nil {
+			return nil
+		}
+		switch c.Branch.TypeRef {
+		case block.TypeRefMap:
+			return NewMap(c.Branch)
+		case block.TypeRefArray:
+			return NewArray(c.Branch)
+		case block.TypeRefText:
+			return NewText(c.Branch)
+		}
 	}
 	return nil
 }

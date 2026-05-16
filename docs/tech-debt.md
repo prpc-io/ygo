@@ -26,12 +26,10 @@
 - **Impact today:** none — no caller uses offset > 0 yet.
 - **When to address:** with the V1 update decoder, which is the only producer of partial-offset integrates.
 
-### Item.Integrate Named/ID parent resolution returns drop
+### Item.Integrate Named/ID parent resolution (resolved)
 
-- **Where:** `internal/block/integrate.go` `Item.Integrate` second branch.
-- **What:** yrs resolves `TypePtr::Named(name)` via `store.get_or_create_type` (lazily creates a root branch) and `TypePtr::ID(id)` by looking up the parent Item and reading `Type` content. We return true (drop) for any parent kind other than already-resolved `ParentBranch`.
-- **Impact today:** updates carrying not-yet-resolved parent references silently get tombstoned. Real impact arrives once we accept updates from JS Yjs over the wire (which encodes parents as Named or ID, not as live Branch pointers).
-- **When to address:** with the types layer, which owns the root-type registry. Pair with the V1 decoder so wire updates resolve correctly on application.
+- **Was:** updates carrying ParentNamed or ParentID silently dropped.
+- **Resolved by:** Repair handles all three parent kinds. ParentNamed via `ctx.GetOrCreateBranch`. ParentID via lookup of the parent Item, extraction of its embedded Branch from KindType Content (see `internal/block/repair.go`). Items whose ParentID points at an unseen clock queue in `encoding.Pending` and integrate on the next Apply that satisfies the dependency (proven by `TestNested_OutOfOrderApply_DrainsViaPending`).
 
 ### Item.Integrate Move/Subdoc/Weak/Format integrations not handled
 
@@ -135,12 +133,10 @@
   - **No partial-block origin override.** Per `update-v1.md` gotcha 4, sliced items must synthesize Origin = `(client, clock+start-1)`. Without slicing we don't trigger this; the gotcha returns when EncodeDiff gains slice-trim.
 - **When to address:** when network-bandwidth-driven sync becomes a real cost (multi-MB docs over slow links). Pure-correctness test pipeline already passes.
 
-### Item.Repair partial — ParentID not implemented
+### Item.Repair ParentID (resolved)
 
-- **Where:** `internal/block/repair.go`.
-- **What:** Repair handles ParentBranch (pass-through), ParentNamed (resolves via ctx.GetOrCreateBranch), ParentUnknown (inherits from neighbour). ParentID (nested type by item ID) returns `ErrParentIDUnresolved`.
-- **Why deferred:** ParentID arrives only with nested shared types (a Map inside an Array, etc.). We have only root-level Map; no nested-type construction yet.
-- **When to address:** with the nested-type construction path in the types layer.
+- **Was:** Repair returned `ErrParentIDUnresolved` for any ParentID reference.
+- **Resolved by:** ParentID arm in `internal/block/repair.go` looks up the parent Item via `ctx.GetItem`, asserts the Content is KindType, and binds `it.Parent = {Kind: ParentBranch, Branch: parent.Content.Branch}`. Missing parents queue in `encoding.Pending` and retry on subsequent Drain passes. Tests in `internal/types/nested_test.go` cover Map-in-Map, Array-in-Map, Text-in-Map, Map-in-Array, deeper hierarchies, wire round-trip, cross-client convergence, and out-of-order delivery.
 
 ### Pending update buffer (resolved)
 
@@ -278,17 +274,16 @@
 
 - **Where:** missing `internal/types/xml_fragment.go`, `xml_element.go`, `xml_text.go`; missing wire-format support for the XML sub-kinds in `internal/encoding/content_codec.go`.
 - **What:** Yjs XML types model DOM-style trees used by ProseMirror, Tiptap, BlockNote, and other rich-text editors. `XmlFragment` is a root container (Array-like) of child nodes; `XmlElement` carries a `nodeName` plus an attribute map (Map-like) plus children (Array-like); `XmlText` is `Text` with formatting markers and can be a child of `XmlElement`. `XmlHook` embeds an arbitrary opaque value and is JS-legacy (post-MVP per yrs).
-- **Wire format additions needed:**
-  1. `ContentType` sub-kind discriminator for XML — Yjs distinguishes `TYPE_REFS_XML_ELEMENT`, `TYPE_REFS_XML_FRAGMENT`, `TYPE_REFS_XML_TEXT`, `TYPE_REFS_XML_HOOK` inside the type-refs varuint that prefixes a ContentType payload. We currently only emit/parse `TYPE_REFS_MAP` and `TYPE_REFS_ARRAY`.
+- **Wire format additions still needed:**
+  1. Extend `ContentType` encoder/decoder to emit/parse the `varstring(nodeName)` after the type-refs byte for XML element / hook variants — already wired for `TypeRefXmlElement` (3) and `TypeRefXmlHook` (5) in `internal/encoding/content_codec.go`, but no callers yet build XML branches with `Name` set.
   2. `KindFormat` content variant (rich-text formatting markers) — XmlText carries these inline.
-- **Prerequisite chain (must land in this order):**
-  1. **Nested-type construction in the types layer** — resolves the ParentID Repair gap already tracked under "Item.Repair partial". XmlElement contains child XmlElements, which arrive over the wire with `Parent = ParentID(parentElementID)`. Without resolution, the children never bind to their parent. Estimated ~300-500 LOC across `internal/block/repair.go`, `internal/encoding/update.go`, and a new construction helper in `internal/types/`.
-  2. **Rich-text formatting on Text** — already tracked under "Text rich-text formatting not implemented" (~600-1000 LOC). XmlText shares the same Format-marker machinery; can't ship XmlText without it.
-  3. **ContentType sub-kind discriminator on encode/decode** — touches `internal/encoding/content_codec.go` (~100 LOC) plus matching `Branch.TypeRef` field in `internal/block/branch.go` to remember whether a branch was constructed as a Map / Array / XmlFragment / XmlElement / etc.
-  4. **XML types themselves** — `XmlFragment`, `XmlElement`, `XmlText` wrappers (~400-600 LOC). XmlElement.GetAttribute / SetAttribute / RemoveAttribute reuse Map machinery on the attribute sub-branch; child management reuses Array machinery on the children sub-branch.
-- **Total estimated effort:** ~1500-2500 LOC across 4 commits (one per prereq layer plus one for the XML types).
-- **When to address:** v1.0 milestone alongside rich-text Text. Until adopters using ProseMirror / Tiptap / BlockNote show up with a concrete ask, the priority sits below WebSocket sync server and Awareness fixture work.
-- **Acknowledgement:** XML support is the gateway to the ~80% of Yjs JavaScript adoption that uses it for collaborative document editors. Shipping it unlocks the largest adoption pool in one move; until then ygo is suitable for Map / Array / plain-Text workloads only.
+- **Prerequisite chain (remaining order):**
+  1. ~~**Nested-type construction in the types layer**~~ — **done**. ParentID resolution + ContentType encode/decode + Map.SetMap/SetArray/SetText + Array.InsertMap/InsertArray/InsertText shipped. XML children integrate end-to-end once their wrapper types exist.
+  2. **Rich-text formatting on Text** — tracked under "Text rich-text formatting not implemented" (~600-1000 LOC). XmlText shares the same Format-marker machinery; can't ship XmlText without it.
+  3. **XML types themselves** — `XmlFragment`, `XmlElement`, `XmlText` wrappers (~400-600 LOC). XmlElement.GetAttribute / SetAttribute / RemoveAttribute reuse Map machinery on the attribute sub-branch; child management reuses Array machinery on the children sub-branch. The wire-format machinery is already in place; this is purely the user-facing API layer.
+- **Total estimated effort remaining:** ~1000-1600 LOC across 2 commits (rich-text Text + XML types).
+- **When to address:** v1.0 milestone alongside rich-text Text. Until adopters using ProseMirror / Tiptap / BlockNote show up with a concrete ask, the priority sits below other open work.
+- **Acknowledgement:** XML support is the gateway to the ~80% of Yjs JavaScript adoption that uses it for collaborative document editors. Shipping it unlocks the largest adoption pool in one move; until then ygo is suitable for Map / Array / plain-Text / nested-Map+Array+Text workloads only.
 
 ## Persistence layer
 

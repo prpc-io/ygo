@@ -5,6 +5,37 @@ package block
 // never inspects their internals. Real definitions land with the types,
 // store, and protocol layers per docs/yrs-port-notes/README.md.
 
+// TypeRef discriminates the kind of shared type a Branch represents.
+// Wire constants match yjs/src/structs/ContentType.js Y*RefID family
+// (Item.js:1382-1388) and yrs/src/types/mod.rs TypeRef enum.
+//
+// The TypeRef byte is emitted as a varuint at the start of a
+// ContentType payload — see docs/yrs-port-notes/nested-types.md §2.
+// Root branches do NOT emit TypeRef on the wire (they are referenced
+// by name), but their in-memory Branch.TypeRef field is still set so
+// extractValue can return the right wrapper type to user code.
+//
+// TypeRefArray is intentionally 0 to match the JS/Rust wire value.
+// TypeRefUndefined (15) is the sentinel for "not specified" — used
+// for Branch values constructed before their final type is known
+// (e.g. a freshly-decoded ContentType payload whose type-refs byte
+// hasn't been read yet). A zero Branch{} would silently read as Array
+// without an explicit sentinel, so constructors must set TypeRef
+// explicitly.
+type TypeRef uint8
+
+const (
+	TypeRefArray       TypeRef = 0
+	TypeRefMap         TypeRef = 1
+	TypeRefText        TypeRef = 2
+	TypeRefXmlElement  TypeRef = 3
+	TypeRefXmlFragment TypeRef = 4
+	TypeRefXmlHook     TypeRef = 5
+	TypeRefXmlText     TypeRef = 6
+	TypeRefDoc         TypeRef = 9
+	TypeRefUndefined   TypeRef = 15
+)
+
 // Branch is the owning collection for nested shared types (Map, Array,
 // Text, Xml). The full type lives in the types layer when it lands;
 // the fields below are the minimum subset that Item.Integrate and
@@ -43,6 +74,16 @@ type Branch struct {
 	// Name identifies a root branch. Empty string for non-root.
 	// Used by encoders that need to emit the parent type name.
 	Name string
+
+	// TypeRef discriminates the kind of shared type this Branch
+	// represents (Map, Array, Text, Xml*, etc.). Set on construction
+	// by the types layer; consumed by the ContentType encoder and by
+	// extractValue when wrapping a nested type for user code.
+	//
+	// The zero value (TypeRefArray) is intentional for the wire
+	// format — Array's type-refs byte is 0. Constructors that build
+	// non-Array branches MUST set this explicitly.
+	TypeRef TypeRef
 }
 
 // Move records a move operation for movable list items. Defined when

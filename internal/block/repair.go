@@ -60,7 +60,24 @@ func Repair(it *Item, ctx IntegrateContext) error {
 		}
 		it.Parent = Parent{Kind: ParentBranch, Branch: b}
 	case ParentID:
-		return ErrParentIDUnresolved
+		// Nested-type parent: look up the parent Item and pull its
+		// embedded Branch out of the KindType Content. The parent
+		// Item must already be in the store; missing parents land
+		// in encoding.Pending which retries Repair on every Drain
+		// pass (per docs/yrs-port-notes/nested-types.md §4 and
+		// gotcha 8). itemMissingDep over in encoding/pending.go
+		// already covers ParentID misses.
+		//
+		// Mirrors yrs Item::repair `TypePtr::ID` arm
+		// (block.rs:1399-1413).
+		parent := ctx.GetItem(it.Parent.ID)
+		if parent == nil {
+			return ErrParentIDUnresolved
+		}
+		if parent.Content.Kind != KindType || parent.Content.Branch == nil {
+			return ErrParentIDNotType
+		}
+		it.Parent = Parent{Kind: ParentBranch, Branch: parent.Content.Branch}
 	}
 	return nil
 }
@@ -68,7 +85,8 @@ func Repair(it *Item, ctx IntegrateContext) error {
 // Errors returned by Repair.
 var (
 	ErrParentUnresolved   repairError = "block: parent could not be resolved"
-	ErrParentIDUnresolved repairError = "block: parent-by-ID resolution not yet implemented (tech-debt: requires nested-type support)"
+	ErrParentIDUnresolved repairError = "block: parent-by-ID points to an Item not yet in the store (queue in pending)"
+	ErrParentIDNotType    repairError = "block: parent-by-ID points to an Item whose Content is not KindType"
 )
 
 type repairError string

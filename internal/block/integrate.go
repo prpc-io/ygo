@@ -238,9 +238,18 @@ func (i *Item) Integrate(ctx IntegrateContext, offset uint64) bool {
 		// arrives with the IdSet layer; for now we just set the flag.
 		// TODO: ctx.InsertDeleteSet(i.ID, i.Len).
 		i.SetDeleted(true)
-	case KindMove, KindDoc, KindFormat, KindType:
+	case KindMove, KindDoc, KindFormat:
 		// Defer per tech-debt.md (Move integration, subdoc
-		// registration, format searchmarker, nested Type init).
+		// registration, format searchmarker).
+	case KindType:
+		// Nested-type init: wire the embedded Branch's back-
+		// reference to this Item so subsequent extractValue calls
+		// and Repair lookups can locate the owning Item from the
+		// Branch alone. Per docs/yrs-port-notes/nested-types.md
+		// gotcha 2.
+		if i.Content.Branch != nil {
+			i.Content.Branch.Item = i
+		}
 	}
 
 	ctx.AddChangedType(parent, i.ParentSub)

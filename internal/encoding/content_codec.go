@@ -13,8 +13,8 @@ import (
 //
 // Mirrors yrs/src/block.rs:1844-1872 ItemContent::encode.
 //
-// Supported in this commit: KindAny, KindString, KindBinary, KindDeleted.
-// Skipped: KindEmbed, KindFormat, KindType, KindDoc, KindMove, KindJSON.
+// Supported in this commit: KindAny, KindString, KindBinary, KindDeleted, KindType.
+// Skipped: KindEmbed, KindFormat, KindDoc, KindMove, KindJSON.
 // All deferred kinds panic on encode rather than emit silently-wrong
 // bytes.
 func EncodeContent(buf []byte, c block.Content) []byte {
@@ -31,8 +31,23 @@ func EncodeContent(buf []byte, c block.Content) []byte {
 		return lib0.WriteVarUint8Array(buf, c.Bytes)
 	case block.KindDeleted:
 		return lib0.WriteVarUint(buf, c.DeletedLen)
+	case block.KindType:
+		// ContentType payload: varuint(typeRef) + optional
+		// varstring(name) for XmlElement (refID 3) and XmlHook
+		// (refID 5). Per docs/yrs-port-notes/nested-types.md §2,
+		// citing yjs/src/structs/ContentType.js:1507-1510 and
+		// yrs equivalent.
+		if c.Branch == nil {
+			panic("encoding.EncodeContent: KindType with nil Branch")
+		}
+		buf = lib0.WriteVarUint(buf, uint64(c.Branch.TypeRef))
+		switch c.Branch.TypeRef {
+		case block.TypeRefXmlElement, block.TypeRefXmlHook:
+			buf = lib0.WriteVarString(buf, c.Branch.Name)
+		}
+		return buf
 	default:
-		panic(fmt.Sprintf("encoding.EncodeContent: unsupported kind %d (supported: Any, String, Binary, Deleted)", c.Kind))
+		panic(fmt.Sprintf("encoding.EncodeContent: unsupported kind %d (supported: Any, String, Binary, Deleted, Type)", c.Kind))
 	}
 }
 
@@ -82,6 +97,30 @@ func DecodeContent(buf []byte, refNum uint8) (block.Content, []byte, error) {
 			return block.Content{}, buf, err
 		}
 		return block.Content{Kind: block.KindDeleted, DeletedLen: v}, buf[n:], nil
+	case block.KindType:
+		// Mirror of EncodeContent.KindType. Build an empty Branch
+		// with the wire-supplied TypeRef. The Branch.Item back-
+		// reference is set by the Repair / Integrate path once the
+		// containing Item is fully constructed (gotcha 2 in
+		// nested-types.md). Map field is lazily allocated when the
+		// types layer first writes a map-key.
+		typeRefU, n, err := lib0.ReadVarUint(buf)
+		if err != nil {
+			return block.Content{}, buf, err
+		}
+		buf = buf[n:]
+		typeRef := block.TypeRef(typeRefU)
+		br := &block.Branch{TypeRef: typeRef}
+		switch typeRef {
+		case block.TypeRefXmlElement, block.TypeRefXmlHook:
+			name, n, err := lib0.ReadVarString(buf)
+			if err != nil {
+				return block.Content{}, buf, err
+			}
+			br.Name = name
+			buf = buf[n:]
+		}
+		return block.Content{Kind: block.KindType, Branch: br}, buf, nil
 	default:
 		return block.Content{}, buf, fmt.Errorf("encoding.DecodeContent: unsupported content kind %d (tech-debt.md)", refNum)
 	}

@@ -283,7 +283,9 @@ func findInsertPosition(branch *block.Branch, txn *doc.TransactionMut, idx uint6
 // Anys[offset]. ContentString uses byte indexing as a placeholder
 // pending the Text type's UTF-16 storage decision; ContentBinary
 // returns the whole []byte at offset 0 (it's a single-element
-// variant). Other kinds return nil.
+// variant). ContentType returns the wrapped nested *Map/*Array/*Text
+// at offset 0 (Len == 1 always for KindType items). Other kinds
+// return nil.
 func extractValueAt(c block.Content, offset uint64) any {
 	switch c.Kind {
 	case block.KindAny:
@@ -298,6 +300,85 @@ func extractValueAt(c block.Content, offset uint64) any {
 		if offset == 0 {
 			return c.Bytes
 		}
+	case block.KindType:
+		if offset != 0 || c.Branch == nil {
+			return nil
+		}
+		switch c.Branch.TypeRef {
+		case block.TypeRefMap:
+			return NewMap(c.Branch)
+		case block.TypeRefArray:
+			return NewArray(c.Branch)
+		case block.TypeRefText:
+			return NewText(c.Branch)
+		}
 	}
 	return nil
+}
+
+// InsertMap inserts a freshly-constructed nested Map at idx and
+// returns the wrapper. Per docs/yrs-port-notes/nested-types.md §6.
+//
+// Like InsertRange, idx is clamped to [0, Len]; the new Map element
+// occupies one slot (Len contribution = 1).
+func (a *Array) InsertMap(txn *doc.TransactionMut, idx uint64) *Map {
+	inner := &block.Branch{
+		TypeRef: block.TypeRefMap,
+		Map:     map[string]*block.Item{},
+	}
+	a.insertNested(txn, idx, inner)
+	return &Map{branch: inner}
+}
+
+// InsertArray inserts a freshly-constructed nested Array at idx.
+func (a *Array) InsertArray(txn *doc.TransactionMut, idx uint64) *Array {
+	inner := &block.Branch{TypeRef: block.TypeRefArray}
+	a.insertNested(txn, idx, inner)
+	return &Array{branch: inner}
+}
+
+// InsertText inserts a freshly-constructed nested Text at idx
+// (plain-text only).
+func (a *Array) InsertText(txn *doc.TransactionMut, idx uint64) *Text {
+	inner := &block.Branch{TypeRef: block.TypeRefText}
+	a.insertNested(txn, idx, inner)
+	return &Text{branch: inner}
+}
+
+// insertNested is the shared scaffolding for InsertMap/InsertArray/
+// InsertText: build an Item with KindType content at position idx
+// and integrate. Item.Integrate KindType arm wires Branch.Item back
+// to the Item.
+func (a *Array) insertNested(txn *doc.TransactionMut, idx uint64, inner *block.Branch) {
+	left, right := findInsertPosition(a.branch, txn, idx)
+
+	var origin, rightOrigin *block.ID
+	if left != nil {
+		lid := left.LastID()
+		origin = &lid
+	}
+	if right != nil {
+		rid := right.ID
+		rightOrigin = &rid
+	}
+
+	clientID := txn.Doc().ClientID()
+	clock := txn.Store().GetClock(clientID)
+
+	item := &block.Item{
+		ID:          block.ID{Client: clientID, Clock: clock},
+		Len:         1,
+		Origin:      origin,
+		Left:        left,
+		RightOrigin: rightOrigin,
+		Right:       right,
+		Content:     block.Content{Kind: block.KindType, Branch: inner},
+		Parent:      block.Parent{Kind: block.ParentBranch, Branch: a.branch},
+		Flags:       block.FlagCountable,
+	}
+
+	txn.Store().PushBlock(item)
+	if dropped := item.Integrate(txn, 0); dropped {
+		txn.Delete(item)
+	}
 }
