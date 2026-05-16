@@ -92,7 +92,7 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
 | ID   | Workload                              |    ops (ms) | V1 doc | V2 doc | parse V1 (ms) | parse V2 (ms) |
 |------|---------------------------------------|------------:|-------:|-------:|--------------:|--------------:|
 | B3.1 | 489 clients set Number in shared Map  |        1.00 |  8,142 |  6,694 |          0.29 |          0.30 |
-| B3.2 | 489 clients set Object in shared Map  |     skipped |    n/a |    n/a |           n/a |           n/a |
+| B3.2 | 489 clients set Object in shared Map  |        3.80 | 12,118 | 10,670 |          0.84 |          0.70 |
 | B3.3 | 489 clients set String in shared Map  |        1.03 | 11,030 |  9,582 |          0.28 |          0.30 |
 | B3.4 | 489 clients insert into shared Array  |      133.60 |  7,329 |  5,400 |          0.26 |          0.31 |
 

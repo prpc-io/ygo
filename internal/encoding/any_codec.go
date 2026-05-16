@@ -1,8 +1,10 @@
 package encoding
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/Deln0r/ygo/internal/lib0"
 )
@@ -27,23 +29,31 @@ const (
 )
 
 // ErrUnsupportedAnyTag is returned when DecodeAny encounters a type
-// tag we do not yet support (BigInt, Float32, Object, Array, Binary).
+// tag that cannot be mapped to a Go value.
 var ErrUnsupportedAnyTag = errors.New("encoding: unsupported Any tag")
 
 // EncodeAny appends the lib0 Any TLV encoding of v to buf.
 //
-// Supported variants in this commit: nil → null, bool → true/false,
-// string → string, int / int64 → integer (varint, fits 32 bits) or
-// float64 (otherwise), float64 → float64. The 32-bit integer cap
-// matches lib0's writeAny which sniffs `BITS31` and falls through to
-// float64 for larger numbers.
+// Supported variants:
+//   - nil → null (tag 126)
+//   - bool → true/false (tags 120/121)
+//   - string → string (tag 119, varstring payload)
+//   - int / int32 / int64 fitting in 32 bits → integer (tag 125, varint payload)
+//   - int / int64 outside 32-bit range → float64 (tag 123, 8-byte BE payload)
+//     — matches lib0's BITS31 sniff for safe-integer range
+//   - float32 → float32 (tag 124, 4-byte BE payload)
+//   - float64 → float64 (tag 123, 8-byte BE payload)
+//   - []byte → binary (tag 116, varuint length + bytes)
+//   - []any → array (tag 117, varuint count + each element recursively)
+//   - map[string]any → object (tag 118, varuint count + each (varstring key + Any value)).
+//     Keys are sorted alphabetically so the wire bytes are deterministic
+//     across runs — Go map iteration order is randomized, which would
+//     otherwise break the fixture-determinism guarantee.
 //
-// Unsupported in this commit (panic): float32 (use float64 instead),
-// big.Int / int64 outside int32 range as integer (auto-promotes to
-// float64 with possible precision loss), []byte (use ContentBinary
-// directly via the block layer for binary data), arrays, maps. These
-// cover the value types common Map.Set users hit; richer Any
-// support arrives with the Array / nested-types layer.
+// Not yet supported (panics):
+//   - math/big BigInt encoding (decode side returns int64 from the
+//     8-byte BE payload, matching lib0 writeBigInt64; encoding from
+//     Go side is deferred until an adopter actually needs it)
 //
 // Mirrors lib0/encoding.js writeAny.
 func EncodeAny(buf []byte, v any) []byte {
@@ -59,32 +69,83 @@ func EncodeAny(buf []byte, v any) []byte {
 		buf = append(buf, AnyTagString)
 		return lib0.WriteVarString(buf, x)
 	case int:
-		if isInt32(int64(x)) {
-			buf = append(buf, AnyTagInteger)
-			return lib0.WriteVarInt(buf, int64(x))
-		}
-		buf = append(buf, AnyTagFloat64)
-		return lib0.WriteFloat64(buf, float64(x))
+		return encodeIntAny(buf, int64(x))
+	case int32:
+		return encodeIntAny(buf, int64(x))
 	case int64:
-		if isInt32(x) {
-			buf = append(buf, AnyTagInteger)
-			return lib0.WriteVarInt(buf, x)
-		}
-		buf = append(buf, AnyTagFloat64)
-		return lib0.WriteFloat64(buf, float64(x))
+		return encodeIntAny(buf, x)
+	case float32:
+		buf = append(buf, AnyTagFloat32)
+		return lib0.WriteFloat32(buf, x)
 	case float64:
 		buf = append(buf, AnyTagFloat64)
 		return lib0.WriteFloat64(buf, x)
+	case []byte:
+		buf = append(buf, AnyTagBinary)
+		return lib0.WriteVarUint8Array(buf, x)
+	case []any:
+		buf = append(buf, AnyTagArray)
+		buf = lib0.WriteVarUint(buf, uint64(len(x)))
+		for _, el := range x {
+			buf = EncodeAny(buf, el)
+		}
+		return buf
+	case map[string]any:
+		buf = append(buf, AnyTagObject)
+		buf = lib0.WriteVarUint(buf, uint64(len(x)))
+		// Deterministic key order — JS Object.keys preserves
+		// insertion order but Go map iteration is randomized;
+		// alphabetical sort gives reproducible bytes across runs.
+		// Adopters who need insertion-order semantics should use
+		// the wire bytes as opaque blobs, not byte-equality compare.
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			buf = lib0.WriteVarString(buf, k)
+			buf = EncodeAny(buf, x[k])
+		}
+		return buf
 	default:
-		panic(fmt.Sprintf("encoding.EncodeAny: unsupported value type %T (supported: nil, bool, string, int, int64, float64; tracked in tech-debt.md)", v))
+		panic(fmt.Sprintf("encoding.EncodeAny: unsupported value type %T (supported: nil, bool, string, int*, float32, float64, []byte, []any, map[string]any)", v))
 	}
 }
 
+// encodeIntAny picks between AnyTagInteger (varint, 32-bit cap) and
+// AnyTagFloat64 (precision-preserving fallback for larger values).
+// Mirrors lib0 writeAny's `BITS31` sniff.
+func encodeIntAny(buf []byte, x int64) []byte {
+	if isInt32(x) {
+		buf = append(buf, AnyTagInteger)
+		return lib0.WriteVarInt(buf, x)
+	}
+	buf = append(buf, AnyTagFloat64)
+	return lib0.WriteFloat64(buf, float64(x))
+}
+
 // DecodeAny reads one lib0-Any-encoded value from buf and returns the
-// value plus the unconsumed tail. Supports the same subset as
-// EncodeAny; unsupported tags return ErrUnsupportedAnyTag without
-// consuming bytes past the tag (callers should treat this as a
-// stream-corrupting error rather than a recoverable skip).
+// value plus the unconsumed tail.
+//
+// Tag → Go type mapping:
+//
+//	binary (116)    → []byte (slice is copied; never aliases buf)
+//	array (117)     → []any (recursive)
+//	object (118)    → map[string]any (recursive)
+//	string (119)    → string
+//	true (120)      → true
+//	false (121)     → false
+//	bigint (122)    → int64 (8-byte BE; loses precision above int64 range,
+//	                   matching lib0's writeBigInt64 wire format)
+//	float64 (123)   → float64
+//	float32 (124)   → float64 (widened; downstream callers rarely care
+//	                   about the source-width distinction)
+//	integer (125)   → int64
+//	null (126)      → nil
+//	undefined (127) → nil
+//
+// Unknown tags return ErrUnsupportedAnyTag.
 func DecodeAny(buf []byte) (any, []byte, error) {
 	if len(buf) < 1 {
 		return nil, buf, lib0.ErrTruncated
@@ -122,6 +183,57 @@ func DecodeAny(buf []byte) (any, []byte, error) {
 			return nil, buf, err
 		}
 		return float64(v), buf[n:], nil
+	case AnyTagBigInt:
+		if len(buf) < 8 {
+			return nil, buf, lib0.ErrTruncated
+		}
+		v := int64(binary.BigEndian.Uint64(buf[:8]))
+		return v, buf[8:], nil
+	case AnyTagBinary:
+		b, n, err := lib0.ReadVarUint8Array(buf)
+		if err != nil {
+			return nil, buf, err
+		}
+		out := make([]byte, len(b))
+		copy(out, b)
+		return out, buf[n:], nil
+	case AnyTagArray:
+		count, n, err := lib0.ReadVarUint(buf)
+		if err != nil {
+			return nil, buf, err
+		}
+		buf = buf[n:]
+		arr := make([]any, count)
+		for i := uint64(0); i < count; i++ {
+			el, tail, err := DecodeAny(buf)
+			if err != nil {
+				return nil, buf, fmt.Errorf("Any array element %d: %w", i, err)
+			}
+			arr[i] = el
+			buf = tail
+		}
+		return arr, buf, nil
+	case AnyTagObject:
+		count, n, err := lib0.ReadVarUint(buf)
+		if err != nil {
+			return nil, buf, err
+		}
+		buf = buf[n:]
+		m := make(map[string]any, count)
+		for i := uint64(0); i < count; i++ {
+			key, kn, err := lib0.ReadVarString(buf)
+			if err != nil {
+				return nil, buf, fmt.Errorf("Any object key %d: %w", i, err)
+			}
+			buf = buf[kn:]
+			val, tail, err := DecodeAny(buf)
+			if err != nil {
+				return nil, buf, fmt.Errorf("Any object value for key %q: %w", key, err)
+			}
+			m[key] = val
+			buf = tail
+		}
+		return m, buf, nil
 	default:
 		return nil, buf, fmt.Errorf("%w: tag=%d", ErrUnsupportedAnyTag, tag)
 	}

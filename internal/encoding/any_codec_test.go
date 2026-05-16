@@ -57,20 +57,138 @@ func TestAny_LargeIntegerPromotesToFloat64(t *testing.T) {
 	}
 }
 
-func TestAny_DecodeUnsupportedTag(t *testing.T) {
-	// Tags 116 (binary), 117 (array), 118 (object), 122 (bigint) all
-	// unsupported in this commit. Decoder must return
-	// ErrUnsupportedAnyTag rather than panic or silently mis-parse.
-	for _, tag := range []uint8{AnyTagBinary, AnyTagArray, AnyTagObject, AnyTagBigInt} {
-		_, _, err := DecodeAny([]byte{tag})
-		if !errors.Is(err, ErrUnsupportedAnyTag) {
-			t.Errorf("tag %d: err = %v, want ErrUnsupportedAnyTag", tag, err)
-		}
-	}
-}
-
 func TestAny_DecodeTruncated(t *testing.T) {
 	if _, _, err := DecodeAny(nil); err == nil {
 		t.Error("decode of empty input must error")
+	}
+}
+
+func TestAny_RoundTrip_Float32(t *testing.T) {
+	buf := EncodeAny(nil, float32(2.5))
+	if buf[0] != AnyTagFloat32 {
+		t.Errorf("expected Float32 tag (124), got %d", buf[0])
+	}
+	out, tail, err := DecodeAny(buf)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(tail) != 0 {
+		t.Errorf("trailing bytes: % x", tail)
+	}
+	// Decoder widens to float64; both 2.5 representations are exact.
+	if got, ok := out.(float64); !ok || got != 2.5 {
+		t.Errorf("got %v (%T), want 2.5", out, out)
+	}
+}
+
+func TestAny_RoundTrip_Binary(t *testing.T) {
+	in := []byte{0x00, 0x01, 0xff, 0xab, 0xcd}
+	buf := EncodeAny(nil, in)
+	if buf[0] != AnyTagBinary {
+		t.Errorf("expected Binary tag (116), got %d", buf[0])
+	}
+	out, tail, err := DecodeAny(buf)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(tail) != 0 {
+		t.Errorf("trailing bytes: % x", tail)
+	}
+	got, ok := out.([]byte)
+	if !ok {
+		t.Fatalf("got %T, want []byte", out)
+	}
+	if !reflect.DeepEqual(got, in) {
+		t.Errorf("got % x, want % x", got, in)
+	}
+	// Decoded slice must not alias buf.
+	buf[1] = 0xaa
+	if got[0] == 0xaa {
+		t.Error("decoded slice aliases input buffer")
+	}
+}
+
+func TestAny_RoundTrip_Array(t *testing.T) {
+	in := []any{
+		"hello",
+		int64(42),
+		true,
+		nil,
+		float64(3.14),
+		[]any{int64(1), int64(2)},
+	}
+	buf := EncodeAny(nil, in)
+	if buf[0] != AnyTagArray {
+		t.Errorf("expected Array tag (117), got %d", buf[0])
+	}
+	out, tail, err := DecodeAny(buf)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(tail) != 0 {
+		t.Errorf("trailing bytes: % x", tail)
+	}
+	if !reflect.DeepEqual(out, in) {
+		t.Errorf("got %v, want %v", out, in)
+	}
+}
+
+func TestAny_RoundTrip_Object(t *testing.T) {
+	in := map[string]any{
+		"name":    "yjs",
+		"version": int64(13),
+		"flags":   map[string]any{"strict": true},
+		"counts":  []any{int64(1), int64(2), int64(3)},
+		"nullval": nil,
+	}
+	buf := EncodeAny(nil, in)
+	if buf[0] != AnyTagObject {
+		t.Errorf("expected Object tag (118), got %d", buf[0])
+	}
+	out, tail, err := DecodeAny(buf)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(tail) != 0 {
+		t.Errorf("trailing bytes: % x", tail)
+	}
+	if !reflect.DeepEqual(out, in) {
+		t.Errorf("got %v, want %v", out, in)
+	}
+}
+
+func TestAny_DecodeBigInt(t *testing.T) {
+	// 8-byte BE int64. Decoder must accept; encoder side does not
+	// currently emit BigInt (callers use int64/int → integer/float64).
+	// JS Yjs payloads containing BigInt must still round-trip on Go.
+	in := []byte{AnyTagBigInt, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2a}
+	out, tail, err := DecodeAny(in)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(tail) != 0 {
+		t.Errorf("trailing bytes: % x", tail)
+	}
+	if got, ok := out.(int64); !ok || got != 42 {
+		t.Errorf("got %v (%T), want int64(42)", out, out)
+	}
+}
+
+func TestAny_ObjectDeterministicKeyOrder(t *testing.T) {
+	// Go map iteration is randomized; sorted-keys policy makes wire
+	// bytes reproducible. Run twice and assert byte-equal output.
+	in := map[string]any{"c": int64(3), "a": int64(1), "b": int64(2)}
+	a := EncodeAny(nil, in)
+	b := EncodeAny(nil, in)
+	if !reflect.DeepEqual(a, b) {
+		t.Errorf("non-deterministic encoding:\nfirst:  % x\nsecond: % x", a, b)
+	}
+}
+
+func TestAny_UnknownTagStillErrors(t *testing.T) {
+	// Tag 0 is not a valid Any TLV variant; decoder must error.
+	_, _, err := DecodeAny([]byte{0x00})
+	if !errors.Is(err, ErrUnsupportedAnyTag) {
+		t.Errorf("err = %v, want ErrUnsupportedAnyTag", err)
 	}
 }

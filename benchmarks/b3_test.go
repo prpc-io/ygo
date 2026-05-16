@@ -50,13 +50,24 @@ func BenchmarkB3_1_ManyClientsSetNumber(b *testing.B) {
 	runStandardSuite(b, build)
 }
 
-// B3.2 — N3 clients each set a nested Object (JSON-style map) in
-// the shared Map. Disabled pending Any TLV support for map values
-// (tech-debt: "Any TLV missing arrays/objects/buffers/bigint/
-// float32"). Re-enable by passing map[string]any once EncodeAny
-// handles the object variant.
+// B3.2 — N3 clients each set a JSON-style object (map[string]any)
+// as the value in a shared Map. Exercises the Any TLV Object
+// variant (tag 118) — keys + recursive Any values per element.
 func BenchmarkB3_2_ManyClientsSetObject(b *testing.B) {
-	b.Skip("blocked on Any TLV map value support; see docs/tech-debt.md")
+	val := map[string]any{"a": int64(1), "b": "x"}
+	build := func() *ygo.Doc {
+		return buildManyClientsMap(func(_ int) any { return val })
+	}
+
+	b.Run("ops", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			d := build()
+			if i == 0 {
+				reportSize(b, d)
+			}
+		}
+	})
+	runStandardSuite(b, build)
 }
 
 // B3.3 — N3 clients each set a short string value.

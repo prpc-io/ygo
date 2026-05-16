@@ -200,13 +200,12 @@
 - **Why deferred:** matches yrs's choice; cost is invisible until B3 (text-heavy) benchmarks land.
 - **When to address:** after `dmonad/crdt-benchmarks` B3 port shows text editing in hot path. Pair with the "Text Insert / Delete walks twice" entry below.
 
-### Any type is a placeholder
+### Any type is a placeholder (partially resolved)
 
 - **Where:** `internal/block/stubs.go` `type Any = any`.
-- **What:** yrs's `Any` is a tagged union (Bool, Number, BigInt, String, Buffer, Array, Map, Null, Undefined). Wire encoding requires deterministic serialization of each variant; an opaque `any` doesn't give us that.
-- **Why deferred:** the encoder layer is what enforces wire compat. The current block layer only constructs/inspects Any values; it doesn't serialize them.
-- **When to address:** when implementing the V1 update encoder.
-- **Reference:** `yrs/src/any.rs`. Port into a proper Go tagged union and replace the alias.
+- **Was:** opaque `any` with encoder/decoder supporting only nil/bool/string/int*/float64.
+- **Partially resolved by:** `internal/encoding/any_codec.go` now covers all common lib0 Any variants — `[]byte` (binary, tag 116), `[]any` (array, tag 117), `map[string]any` (object, tag 118 with deterministic alphabetical key order so wire bytes stay reproducible across runs), `float32` (tag 124), and BigInt decode (tag 122 → `int64` via 8-byte BE, matching `writeBigInt64`). Per-variant round-trip tests in `any_codec_test.go`. B3.2 benchmark un-blocked and running.
+- **Remaining:** native BigInt encoding from Go (would need an explicit `BigInt` wrapper type so we can distinguish from `int64`; defer until an adopter actually needs to send BigInts from Go). `Any` is still a `type Any = any` alias rather than a tagged union — replacing with a proper union would be a public API change worth its own commit when the surrounding ergonomics make sense.
 
 ### Forward-dependency stubs are empty types
 
