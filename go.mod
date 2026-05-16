@@ -2,7 +2,10 @@ module github.com/Deln0r/ygo
 
 go 1.22
 
-require modernc.org/sqlite v1.29.10
+require (
+	github.com/coder/websocket v1.8.12
+	modernc.org/sqlite v1.29.10
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

@@ -26,6 +26,9 @@ go.work.sum
 /bin/
 /dist/
 
+# Compiled command-line binaries built at repo root by `go build ./cmd/...`
+/ygo-server
+
 # Node fixture generator
 testdata/gen/node_modules/
 testdata/gen/package-lock.json

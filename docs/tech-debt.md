@@ -215,6 +215,40 @@
 - **Why deferred:** by design — the block layer references these only through pointers and never inspects their internals. Real definitions land with their owning layers.
 - **When to address:** `Branch` with the types layer; `Move` post-MVP per ROADMAP. The `block.Doc` stub stays even after `internal/doc.Doc` lands, because the block layer can't depend on the doc layer (would cycle); we'll bridge them through an interface when sub-document support arrives.
 
+## Sync protocol / WebSocket server
+
+### Hocuspocus extensions (Auth, Stateless, Close, SyncStatus) not implemented
+
+- **Where:** `internal/sync/handler.go` `HandleFrame` default branch silently drops these message types.
+- **What:** the full Hocuspocus envelope adds 5 message types beyond the bare y-websocket subset (Sync + Awareness + QueryAwareness): MessageAuth (2), MessageStateless (5), MessageBroadcastStateless (6), MessageClose (7), MessageSyncStatus (8). We decode them — DecodeEnvelope returns a Frame with the raw payload — but the dispatcher ignores them. Servers using ygo will not echo Stateless messages back, will not perform auth handshakes, and will not emit SyncStatus acks.
+- **Impact today:** clients that REQUIRE these (Hocuspocus's hosted offering with auth tokens, custom extensions using Stateless for app-level RPC) will not work. Pure y-websocket clients and the Sync+Awareness subset of Hocuspocus clients work fine.
+- **When to address:** v0.2. Auth first (Options.OnAuthenticate callback + MessageClose with permission-denied reason code 4401, per port-note "Auth flow"). Stateless second (Options.OnStateless callback). SyncStatus third (low-priority — ack signal that most clients ignore).
+
+### Cross-language y-websocket / Hocuspocus fixture not captured
+
+- **Where:** missing `testdata/gen/gen-sync-protocol.mjs`, `testdata/sync-fixtures.json`, Go fixture test in `internal/sync/`.
+- **What:** byte-level wire format is asserted via hand-built fixtures in `framing_test.go` and pure-Go round-trip in `handler_test.go`. No proof against a real y-websocket server emitting the same bytes.
+- **When to address:** before announcing the server as "Hocuspocus-compat" beyond v0.1. Wire a Node fixture that runs y-websocket server briefly, captures its initial-handshake bytes for a known clientID, asserts our server produces matching bytes.
+
+### Broadcast fan-out is O(N) per update with no rate limiting
+
+- **Where:** `server/server.go` `(*conn).broadcast`.
+- **What:** every applied SyncUpdate triggers a synchronous send to every connection on the doc. For docs with hundreds of active connections, a single rapid edit producer can saturate the server's write loop. There is no batching, deduplication, or backpressure.
+- **Why deferred:** no real workload yet. The pure-Go reference implementations of y-websocket and Hocuspocus run the same naive fan-out at adopter scale.
+- **When to address:** if benchmarks show fan-out latency dominating. Mitigations in priority order: (a) per-connection bounded write queue with drop-oldest policy, (b) batch updates within a small time window (5-10ms), (c) per-doc dedicated fan-out goroutine to amortize lock acquisition.
+
+### Persistence: every SyncUpdate is stored as a separate row
+
+- **Where:** `server/server.go` `(*conn).maybePersist` calls `Store.StoreUpdate` per envelope.
+- **What:** an active doc with 1000 small edits accumulates 1000 rows in the underlying store before any compaction runs. Flush runs only on the last-disconnect path (see `releaseConn`). For an always-connected doc, the log grows unbounded between server restarts.
+- **When to address:** with an in-server auto-flush heuristic. Simple shape: per-doc counter, when N >= 200 schedule a Flush. Pre-condition: lift `Flush` to be safe under concurrent `StoreUpdate` (it already wraps everything in a SQLite transaction, but rest of the API surface should be audited).
+
+### V2 update encoding not supported
+
+- **Where:** `internal/encoding/update.go` (V1-only). Reflected at protocol layer in `internal/sync/handler.go` — SyncStep2 / SyncUpdate payloads are passed straight to `encoding.ApplyUpdate` which only knows V1.
+- **What:** Hocuspocus extensions may call `Y.encodeStateAsUpdateV2`. We have no V2 codec; a V2 frame would fail to decode and trip the SyncStep2/Update handler's apply-error path, closing the connection with an InternalError code.
+- **When to address:** v0.3 workstream — full V2 codec implementation. Until then, document that the server speaks V1 only and clients must avoid V2 mode (the default in current JS Yjs is V1).
+
 ## Awareness layer
 
 ### Cross-language JS y-protocols fixture not yet captured

@@ -19,9 +19,10 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | `internal/types/Text` plain-text (Insert / Delete / String / Length) | done; rich-text formatting deferred ([tech-debt](docs/tech-debt.md)) |
 | `internal/types/Xml*` (XmlFragment, XmlElement, XmlText) | not started; v1.0 scope, blocked on rich-text Text + nested-type construction — see [tech-debt](docs/tech-debt.md) for the prereq chain |
 | Persistence (`Store` interface + `modernc.org/sqlite` reference impl) | done; append-only update log, Flush compaction, LoadDoc / GetStateVector / GetDiff helpers; pure-Go (no CGO) |
-| y-sync protocol (WebSocket framing) | not started |
+| y-sync protocol (`internal/sync`) | done; bare y-websocket subset (Sync + Awareness + QueryAwareness) — interoperates with y-websocket and the Sync subset of Hocuspocus clients; Auth + Stateless + Close + SyncStatus deferred to v0.2 |
 | Awareness (`internal/awareness`) | done; LWW presence map, JSON wire payload per y-protocols, self-eviction defense, SweepOutdated; cross-language JS y-protocols fixture deferred ([tech-debt](docs/tech-debt.md)) |
-| `cmd/ygo-server` (Hocuspocus-compat) | not started |
+| `server/` (WebSocket sync server) | done; `http.Handler` mount-anywhere shape, per-doc broadcaster, persists every applied update to optional `persist.Store`, awareness disconnect tombstones |
+| `cmd/ygo-server` (Hocuspocus-compat binary) | done; stand-alone WS server with optional sqlite persistence via `-store` flag |
 | `gomobile bind` build target | not started |
 | Go → JS reverse-direction wire fixture | not started; tracked in [docs/tech-debt.md](docs/tech-debt.md) |
 | V2 update encoding | not started |
