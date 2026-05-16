@@ -238,6 +238,24 @@
 - **Impact today:** none — `SweepOutdated` is documented; callers wrap it in a `time.Ticker` when they need it.
 - **When to address:** never, unless ergonomics complaints arrive. Background goroutines inside passive data structures violate the "no surprise lifecycle" Go convention.
 
+## XML types (XmlFragment, XmlElement, XmlText, XmlHook)
+
+### Not started; depends on a multi-layer prerequisite chain
+
+- **Where:** missing `internal/types/xml_fragment.go`, `xml_element.go`, `xml_text.go`; missing wire-format support for the XML sub-kinds in `internal/encoding/content_codec.go`.
+- **What:** Yjs XML types model DOM-style trees used by ProseMirror, Tiptap, BlockNote, and other rich-text editors. `XmlFragment` is a root container (Array-like) of child nodes; `XmlElement` carries a `nodeName` plus an attribute map (Map-like) plus children (Array-like); `XmlText` is `Text` with formatting markers and can be a child of `XmlElement`. `XmlHook` embeds an arbitrary opaque value and is JS-legacy (post-MVP per yrs).
+- **Wire format additions needed:**
+  1. `ContentType` sub-kind discriminator for XML — Yjs distinguishes `TYPE_REFS_XML_ELEMENT`, `TYPE_REFS_XML_FRAGMENT`, `TYPE_REFS_XML_TEXT`, `TYPE_REFS_XML_HOOK` inside the type-refs varuint that prefixes a ContentType payload. We currently only emit/parse `TYPE_REFS_MAP` and `TYPE_REFS_ARRAY`.
+  2. `KindFormat` content variant (rich-text formatting markers) — XmlText carries these inline.
+- **Prerequisite chain (must land in this order):**
+  1. **Nested-type construction in the types layer** — resolves the ParentID Repair gap already tracked under "Item.Repair partial". XmlElement contains child XmlElements, which arrive over the wire with `Parent = ParentID(parentElementID)`. Without resolution, the children never bind to their parent. Estimated ~300-500 LOC across `internal/block/repair.go`, `internal/encoding/update.go`, and a new construction helper in `internal/types/`.
+  2. **Rich-text formatting on Text** — already tracked under "Text rich-text formatting not implemented" (~600-1000 LOC). XmlText shares the same Format-marker machinery; can't ship XmlText without it.
+  3. **ContentType sub-kind discriminator on encode/decode** — touches `internal/encoding/content_codec.go` (~100 LOC) plus matching `Branch.TypeRef` field in `internal/block/branch.go` to remember whether a branch was constructed as a Map / Array / XmlFragment / XmlElement / etc.
+  4. **XML types themselves** — `XmlFragment`, `XmlElement`, `XmlText` wrappers (~400-600 LOC). XmlElement.GetAttribute / SetAttribute / RemoveAttribute reuse Map machinery on the attribute sub-branch; child management reuses Array machinery on the children sub-branch.
+- **Total estimated effort:** ~1500-2500 LOC across 4 commits (one per prereq layer plus one for the XML types).
+- **When to address:** v1.0 milestone alongside rich-text Text. Until adopters using ProseMirror / Tiptap / BlockNote show up with a concrete ask, the priority sits below WebSocket sync server and Awareness fixture work.
+- **Acknowledgement:** XML support is the gateway to the ~80% of Yjs JavaScript adoption that uses it for collaborative document editors. Shipping it unlocks the largest adoption pool in one move; until then ygo is suitable for Map / Array / plain-Text workloads only.
+
 ## Persistence layer
 
 ### GetStateVector replays the full update log every call

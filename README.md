@@ -17,7 +17,7 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | `internal/types/Map` (Set / Get / Delete / Has / Len / Range / Clear) | done |
 | `internal/types/Array` (Insert / InsertRange / Push / Delete / Get / Len / Range / ToSlice) | done |
 | `internal/types/Text` plain-text (Insert / Delete / String / Length) | done; rich-text formatting deferred ([tech-debt](docs/tech-debt.md)) |
-| `internal/types/Xml*` | not started |
+| `internal/types/Xml*` (XmlFragment, XmlElement, XmlText) | not started; v1.0 scope, blocked on rich-text Text + nested-type construction — see [tech-debt](docs/tech-debt.md) for the prereq chain |
 | Persistence (`Store` interface + `modernc.org/sqlite` reference impl) | done; append-only update log, Flush compaction, LoadDoc / GetStateVector / GetDiff helpers; pure-Go (no CGO) |
 | y-sync protocol (WebSocket framing) | not started |
 | Awareness (`internal/awareness`) | done; LWW presence map, JSON wire payload per y-protocols, self-eviction defense, SweepOutdated; cross-language JS y-protocols fixture deferred ([tech-debt](docs/tech-debt.md)) |
