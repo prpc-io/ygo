@@ -66,6 +66,9 @@ jobs:
       - name: regenerate yjs-update fixtures
         working-directory: testdata/gen
         run: node gen-yjs-update.mjs
+      - name: regenerate yjs-update V2 fixtures
+        working-directory: testdata/gen
+        run: node gen-yjs-update-v2.mjs
       - name: regenerate awareness fixtures
         working-directory: testdata/gen
         run: node gen-awareness.mjs

@@ -1,0 +1,375 @@
+{
+  "generator": "yjs@13.6.20 (V2)",
+  "scenarios": [
+    {
+      "description": "empty doc, no ops",
+      "js_client_id": 100,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "00000000000001000000000000",
+      "expected_map": {}
+    },
+    {
+      "description": "single Map.set string",
+      "js_client_id": 101,
+      "root_kind": "map",
+      "root_name": "settings",
+      "update_hex": "000002a50100000128100d73657474696e6773636f6c6f7208050101000101010100770372656400",
+      "expected_map": {
+        "color": "red"
+      }
+    },
+    {
+      "description": "two Map.set on different keys",
+      "js_client_id": 102,
+      "root_kind": "map",
+      "root_name": "settings",
+      "update_hex": "000002a601000001281e1973657474696e6773636f6c6f7273657474696e67736c616e670805080401010002410001020077037265647702676f00",
+      "expected_map": {
+        "color": "red",
+        "lang": "go"
+      }
+    },
+    {
+      "description": "Map.set across multiple value types",
+      "js_client_id": 103,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "000002a70100000128251d78737869786678625f7472756578625f66616c7365786e756c6c76616c41050601070107010100024104010600770568656c6c6f7d2a7b40091eb851eb851f78797e00",
+      "expected_map": {
+        "s": "hello",
+        "i": 42,
+        "f": 3.14,
+        "b_true": true,
+        "b_false": false,
+        "nullval": null
+      }
+    },
+    {
+      "description": "Map.set + Map.set same key (LWW)",
+      "js_client_id": 104,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "000003e80100010200032100a80502786b4100010100020201010200770574686972640168010001",
+      "expected_map": {
+        "k": "third"
+      }
+    },
+    {
+      "description": "Map.set + Map.delete",
+      "js_client_id": 105,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "000002a90100000321002807047861786241020101000241000102007704626574610169010000",
+      "expected_map": {
+        "b": "beta"
+      }
+    },
+    {
+      "description": "Map.set then delete then set again",
+      "js_client_id": 106,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "000003ea0100010000032100a80502786b410001010002410001020077027632016a010000",
+      "expected_map": {
+        "k": "v2"
+      }
+    },
+    {
+      "description": "Map with unicode keys and values",
+      "js_client_id": 107,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "000002ab0100000128140f78d0bad0bbd18ed18778656d6f6a69010401050101000241000102007710d0b7d0bdd0b0d187d0b5d0bdd0b8d0b577026f6b00",
+      "expected_map": {
+        "ключ": "значение",
+        "emoji": "ok"
+      }
+    },
+    {
+      "description": "empty Array, no ops",
+      "js_client_id": 200,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "00000000000001000000000000",
+      "expected_array": []
+    },
+    {
+      "description": "Array.push single value",
+      "js_client_id": 201,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "00000289030000010803017801010100010101010077046f6e6c7900",
+      "expected_array": [
+        "only"
+      ]
+    },
+    {
+      "description": "Array.push batch packed into one Item",
+      "js_client_id": 202,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0000028a030000010803017801010100010501010077016177016277016377016477016500",
+      "expected_array": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e"
+      ]
+    },
+    {
+      "description": "Array.push of various value types",
+      "js_client_id": 203,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0000028b03000001080301780101010001060101007701737d2a7b40091eb851eb851f78797e00",
+      "expected_array": [
+        "s",
+        42,
+        3.14,
+        true,
+        false,
+        null
+      ]
+    },
+    {
+      "description": "Array.insert in middle of packed run (split)",
+      "js_client_id": 204,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "000003cc030202020001040508008800c8030178010101000342000101030077016177016277016377016477015800",
+      "expected_array": [
+        "a",
+        "b",
+        "X",
+        "c",
+        "d"
+      ]
+    },
+    {
+      "description": "Array.delete single in middle",
+      "js_client_id": 205,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "000003cd030102000200050800810088030178010101000341000201030077016177016377016401cd01010100",
+      "expected_array": [
+        "a",
+        "c",
+        "d"
+      ]
+    },
+    {
+      "description": "Array.delete range across packed run",
+      "js_client_id": 206,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "000003ce030102020600050800810088030178010101000302030101030077016177016277016601ce01010202",
+      "expected_array": [
+        "a",
+        "b",
+        "f"
+      ]
+    },
+    {
+      "description": "Array sequence of separate pushes then insert",
+      "js_client_id": 207,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "000003cf030202020001040508008800c8030178010101000302410001030077016177016277016377015800",
+      "expected_array": [
+        "a",
+        "b",
+        "X",
+        "c"
+      ]
+    },
+    {
+      "description": "empty Text, no ops",
+      "js_client_id": 300,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "00000000000001000000000000",
+      "expected_text": "",
+      "expected_length": 0
+    },
+    {
+      "description": "Text.insert simple ASCII",
+      "js_client_id": 301,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000002ad040000010409067868656c6c6f01050101000001010000",
+      "expected_text": "hello",
+      "expected_length": 5
+    },
+    {
+      "description": "Text two inserts at end",
+      "js_client_id": 302,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000002ae04000001040f0c7868656c6c6f20776f726c64010b0101000001010000",
+      "expected_text": "hello world",
+      "expected_length": 11
+    },
+    {
+      "description": "Text insert in middle (split)",
+      "js_client_id": 303,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000003ef0402020800010a0504008400c4110c7868656c6c6f776f726c6420014500010101000001030000",
+      "expected_text": "hello world",
+      "expected_length": 11
+    },
+    {
+      "description": "Text delete single",
+      "js_client_id": 304,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000003f004010203000005040081008409057868656c6f014200010100010101030001b002010200",
+      "expected_text": "helo",
+      "expected_length": 4
+    },
+    {
+      "description": "Text delete range",
+      "js_client_id": 305,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000003f104000108000304008109067868656c6c6f0105010100010601020001b102010505",
+      "expected_text": "hello",
+      "expected_length": 5
+    },
+    {
+      "description": "Text Cyrillic (BMP non-ASCII)",
+      "js_client_id": 306,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000002b20400000104100d78d0bfd180d0b8d0b2d0b5d18201060101000001010000",
+      "expected_text": "привет",
+      "expected_length": 6
+    },
+    {
+      "description": "Text emoji (non-BMP, surrogate pair)",
+      "js_client_id": 307,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000002b304000001040a077861f09f98806201040101000001010000",
+      "expected_text": "a😀b",
+      "expected_length": 4
+    },
+    {
+      "description": "Text mixed ASCII + non-BMP + insert in middle",
+      "js_client_id": 308,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000003f4040202010001020504008400c40d087861f09f98806342410003010101000001030000",
+      "expected_text": "aB😀c",
+      "expected_length": 5
+    },
+    {
+      "description": "Map with many keys (RLE compression target)",
+      "js_client_id": 400,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "00000290060000012897016e786b657930786b657931786b657932786b657933786b657934786b657935786b657936786b657937786b657938786b657939786b65793130786b65793131786b65793132786b65793133786b65793134786b65793135786b65793136786b65793137786b65793138786b6579313901040104010401040104010401040104010401040105010501050105010501050105010501050105010100024112011400770476616c30770476616c31770476616c32770476616c33770476616c34770476616c35770476616c36770476616c37770476616c38770476616c39770576616c3130770576616c3131770576616c3132770576616c3133770576616c3134770576616c3135770576616c3136770576616c3137770576616c3138770576616c313900",
+      "expected_map": {
+        "key0": "val0",
+        "key1": "val1",
+        "key2": "val2",
+        "key3": "val3",
+        "key4": "val4",
+        "key5": "val5",
+        "key6": "val6",
+        "key7": "val7",
+        "key8": "val8",
+        "key9": "val9",
+        "key10": "val10",
+        "key11": "val11",
+        "key12": "val12",
+        "key13": "val13",
+        "key14": "val14",
+        "key15": "val15",
+        "key16": "val16",
+        "key17": "val17",
+        "key18": "val18",
+        "key19": "val19"
+      }
+    },
+    {
+      "description": "Array large single push (ContentAny len = 50)",
+      "js_client_id": 401,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0000029106000001080301780101010001320101007d007d017d027d037d047d057d067d077d087d097d0a7d0b7d0c7d0d7d0e7d0f7d107d117d127d137d147d157d167d177d187d197d1a7d1b7d1c7d1d7d1e7d1f7d207d217d227d237d247d257d267d277d287d297d2a7d2b7d2c7d2d7d2e7d2f7d307d3100",
+      "expected_array": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49
+      ]
+    },
+    {
+      "description": "Text long single insert (string column)",
+      "js_client_id": 402,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000002920600000104c803c3037854686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e2054686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e2054686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e2054686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e2054686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e2054686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e2054686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e2054686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e2054686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e2054686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e200182070101000001010000",
+      "expected_text": "The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. ",
+      "expected_length": 450
+    },
+    {
+      "description": "Text many one-char inserts at end (constant delta)",
+      "js_client_id": 403,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "0000029306000001041e1b786162636465666768696a6b6c6d6e6f707172737475767778797a011a0101000001010000",
+      "expected_text": "abcdefghijklmnopqrstuvwxyz",
+      "expected_length": 26
+    }
+  ]
+}

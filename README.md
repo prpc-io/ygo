@@ -27,7 +27,7 @@ Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collab
 | `gomobile/` (bytes-only subset for iOS/Android) | done; bindable `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods only; pure-Go (no CGO); `gomobile bind` toolchain verification deferred ([tech-debt](docs/tech-debt.md)) |
 | `gomobile bind` build target | not started |
 | Go → JS reverse-direction wire fixture | not started; tracked in [docs/tech-debt.md](docs/tech-debt.md) |
-| V2 update encoding | lib0 RLE primitives + column encoder/decoder + `Update.EncodeV2` / `Update.DecodeV2` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}` done; cross-language `Y.encodeStateAsUpdateV2` fixtures pending (see [tech-debt](docs/tech-debt.md)) |
+| V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.EncodeV2` / `Update.DecodeV2` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; JS Yjs → Go V2 direction proven by 29 cross-language fixture scenarios (Map + Array + Text + RLE-flexing) against `yjs@13.6.20` `Y.encodeStateAsUpdateV2` |
 | Snapshots / undo manager / sub-documents | not started |
 
 Roadmap and per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md).

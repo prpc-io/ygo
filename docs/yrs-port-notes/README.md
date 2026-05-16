@@ -26,7 +26,7 @@ Per-layer working notes generated incrementally as each layer of the Rust [`yrs`
 | Array shared type | `yrs/src/types/array.rs` | [`types-array.md`](types-array.md) | done; shipped as `internal/types/Array`; 8 cross-language fixture scenarios passing |
 | Text shared type (plain-text) | `yrs/src/types/text.rs` | [`types-text.md`](types-text.md) | done; shipped as `internal/types/Text`; 9 cross-language fixture scenarios passing including non-BMP / surrogate-split U+FFFD |
 | Update encoding (V1) | `yrs/src/update.rs`, encoder/decoder | [`update-v1.md`](update-v1.md) | done; JS Yjs → Go direction proven by 8 fixture scenarios; Go → JS reverse direction tracked in tech-debt |
-| Update encoding (V2 — column-oriented) | `yjs/UpdateEncoderV2.js` + `yrs/encoder_v2.rs` + lib0 RLE primitives | [`update-v2.md`](update-v2.md) | RLE primitives + V2 column encoder/decoder + V2 update wiring shipped; cross-language `Y.encodeStateAsUpdateV2` fixtures pending |
+| Update encoding (V2 — column-oriented) | `yjs/UpdateEncoderV2.js` + `yrs/encoder_v2.rs` + lib0 RLE primitives | [`update-v2.md`](update-v2.md) | done; RLE primitives + V2 column encoder/decoder + V2 update wiring + 29 JS-yjs cross-language fixtures (Map / Array / Text / RLE-flexing) all green |
 | y-sync protocol | `y-protocols/sync.js` + Hocuspocus envelope | [`protocol-sync.md`](protocol-sync.md) | done; reference for implementation |
 | Awareness | `yrs/src/sync/awareness.rs` + `y-protocols/awareness.js` | [`awareness.md`](awareness.md) | done; reference for implementation |
 | Nested-type construction | `yrs/src/block.rs:1368-1431` + `yjs/src/structs/ContentType.js` | [`nested-types.md`](nested-types.md) | done; reference for implementation |
