@@ -153,6 +153,17 @@ func EncodeStateAsUpdate(d *Doc) []byte {
 	return encoding.EncodeStateAsUpdate(d)
 }
 
+// EncodeStateAsUpdateV2 returns the wire-encoded V2 update carrying
+// the doc's full state. V2 is the column-oriented alternative wire
+// format used by Y.encodeStateAsUpdateV2 / Hocuspocus-V2 paths and
+// some adopters' on-disk persistence layers (y-leveldb, y-indexeddb,
+// SQLite/Postgres Hocuspocus adapters).
+//
+// V1 and V2 are NOT wire-interchangeable — see ApplyUpdateV2.
+func EncodeStateAsUpdateV2(d *Doc) []byte {
+	return encoding.EncodeStateAsUpdateV2(d)
+}
+
 // EncodeStateVector returns the wire-encoded V1 state vector of d.
 // Sync-protocol callers send this to peers as "here's what I have;
 // send me everything else."
@@ -182,6 +193,23 @@ func EncodeDiff(d *Doc, remoteSVBytes []byte) ([]byte, error) {
 	return encoding.EncodeDiff(d, t, sv), nil
 }
 
+// EncodeDiffV2 is the V2 analogue of EncodeDiff. State-vector
+// argument shape is identical (still V1 wire-encoded SV); only the
+// outgoing update bytes use the V2 column layout.
+func EncodeDiffV2(d *Doc, remoteSVBytes []byte) ([]byte, error) {
+	var sv store.StateVector
+	if len(remoteSVBytes) > 0 {
+		decoded, _, err := encoding.DecodeStateVector(remoteSVBytes)
+		if err != nil {
+			return nil, err
+		}
+		sv = decoded
+	}
+	t := d.ReadTxn()
+	defer t.Close()
+	return encoding.EncodeDiffV2(d, t, sv), nil
+}
+
 // ApplyUpdate decodes raw and integrates it into d. Items whose
 // dependencies the local store has not yet seen queue in the
 // per-doc pending buffer and drain automatically on subsequent
@@ -190,6 +218,21 @@ func EncodeDiff(d *Doc, remoteSVBytes []byte) ([]byte, error) {
 // Use HasPending / MissingSV to inspect the queue.
 func ApplyUpdate(d *Doc, raw []byte) error {
 	return encoding.ApplyUpdate(d, raw)
+}
+
+// ApplyUpdateV2 decodes V2 wire bytes and integrates them into d.
+// Pending-buffer semantics identical to ApplyUpdate (V1) — items
+// missing causal dependencies queue silently and drain on
+// subsequent ApplyUpdate / ApplyUpdateV2 calls.
+//
+// V1 and V2 are NOT wire-interchangeable. Calling ApplyUpdateV2
+// on V1 bytes (or ApplyUpdate on V2 bytes) is undefined behaviour
+// — either errors loudly or yields a semantically-wrong Update
+// that fails integrate. Per the docs there is no autodetect; the
+// caller must know which version they have via the surrounding
+// transport metadata.
+func ApplyUpdateV2(d *Doc, raw []byte) error {
+	return encoding.ApplyUpdateV2(d, raw)
 }
 
 // HasPending reports whether d has any queued items awaiting

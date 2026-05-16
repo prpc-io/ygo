@@ -256,17 +256,15 @@
 - **What:** an active doc with 1000 small edits accumulates 1000 rows in the underlying store before any compaction runs. Flush runs only on the last-disconnect path (see `releaseConn`). For an always-connected doc, the log grows unbounded between server restarts.
 - **When to address:** with an in-server auto-flush heuristic. Simple shape: per-doc counter, when N >= 200 schedule a Flush. Pre-condition: lift `Flush` to be safe under concurrent `StoreUpdate` (it already wraps everything in a SQLite transaction, but rest of the API surface should be audited).
 
-### V2 update encoding (in progress — port note shipped)
+### V2 update encoding (in progress — step 3/4 shipped, cross-lang fixtures pending)
 
-- **Where:** `internal/encoding/update.go` is V1-only. V2 stub: nothing.
-- **What:** Hocuspocus extensions may call `Y.encodeStateAsUpdateV2`. V2 is column-oriented (RLE + per-field byte streams instead of V1's per-block stream) — wire-incompatible with V1, requires a parallel codec.
-- **Progress:** [docs/yrs-port-notes/update-v2.md](yrs-port-notes/update-v2.md) shipped with full byte-level layout (10 columns + raw `rest` segment behind a `0x00` feature-flag byte), per-column RLE primitive selection (UintOptRle, IntDiffOptRle, StringEncoder, etc.), block-write/read fan-out, Go translation choices, 9 implementation gotchas, scope breakdown (lib0 RLE primitives → V2 column codec → EncodeV2/DecodeV2 → cross-language fixtures, ~1100-1700 LOC across 3-4 commits).
-- **Implementation plan:**
-  1. `internal/lib0/rle.go` — UintOptRle / IntDiffOptRle / StringEncoder primitives + tests (~400-600 LOC, leaf module)
-  2. `internal/encoding/encoder_v2.go` + `decoder_v2.go` — column buffer plumbing (~300-500 LOC)
-  3. `Update.EncodeV2` + `Update.DecodeV2` + public `ygo.ApplyUpdateV2` (~200-400 LOC)
-  4. `testdata/gen/gen-v2.mjs` + cross-language fixtures (~200 LOC)
-- **When to address:** when a real adopter using Hocuspocus's V2 path shows up, OR as v0.3 hardening. V1 covers the default JS Yjs path.
+- **Where:** `internal/encoding/{encoder_v2.go,decoder_v2.go,update_v2.go}`. Public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`.
+- **Progress:**
+  1. ✓ `internal/lib0/rle.go` — RLE primitives (Rle / UintOptRle / IntDiffOptRle / StringEncoder) + 16 unit tests + 16 JS lib0 cross-language fixtures (`7634a53`).
+  2. ✓ `internal/encoding/encoder_v2.go` + `decoder_v2.go` — column buffer plumbing, 15 round-trip tests (`9104ab8`).
+  3. ✓ `internal/encoding/update_v2.go` — `Update.EncodeV2` / `Update.DecodeV2` / `ApplyUpdateV2` / `EncodeStateAsUpdateV2` / `EncodeDiffV2` + `EncodeContentV2` / `DecodeContentV2` + V2 DeleteSet diff stream. 10 tests cover Map / Array / Text / DeleteSet / XmlElement / cross-client / incremental diff / V1↔V2 incompat / bad-flag rejection / empty-doc baseline.
+  4. **Pending — V2 cross-language fixtures**: `testdata/gen/gen-yjs-update-v2.mjs` capturing `Y.encodeStateAsUpdateV2` outputs, + `internal/encoding/v2_fixtures_test.go` asserting `ApplyUpdateV2` matches state, + CI workflow extension. ~200 LOC.
+- **What still depends on this:** any adopter using Hocuspocus's V2 message types (sync envelope codes 4/5 instead of 2/3) or on-disk persistence layers that ship V2 (y-leveldb, y-indexeddb, some Hocuspocus SQLite/Postgres adapters). Until step 4 ships, V2 wire-compatibility with JS yjs is unproven (only Go round-trip is verified). V1 path remains the default everywhere in our sync server / persistence layer.
 
 ## Awareness layer
 
