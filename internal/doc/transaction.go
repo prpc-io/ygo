@@ -48,6 +48,11 @@ func (t *Transaction) Doc() *Doc { return t.doc }
 // mutate from within a read transaction.
 func (t *Transaction) Store() *store.BlockStore { return t.doc.store }
 
+// PendingState returns the opaque pending-update state stored on
+// the doc, read-only. Concrete type is *encoding.Pending; see
+// TransactionMut.PendingState for the rationale.
+func (t *Transaction) PendingState() any { return t.doc.pendingState }
+
 // TransactionMut is a write transaction holding the doc's write lock
 // for its lifetime. Created by Doc.WriteTxn; released by Commit.
 //
@@ -236,6 +241,19 @@ func (t *TransactionMut) ChangedTypes() []*block.Branch {
 	}
 	return out
 }
+
+// PendingState returns the opaque pending-update state stored on
+// the doc. Returns nil when no encoding-layer state has been
+// installed yet. The concrete type is *encoding.Pending; the doc
+// package does not depend on encoding so this stays any-typed at
+// the boundary. Callers (encoding.ApplyUpdate) type-assert.
+func (t *TransactionMut) PendingState() any { return t.doc.pendingState }
+
+// SetPendingState replaces the opaque pending-update state on the
+// doc. Pass nil to drop pending state entirely (e.g. when the
+// queue drains to empty and the encoding layer wants to release
+// the allocation).
+func (t *TransactionMut) SetPendingState(s any) { t.doc.pendingState = s }
 
 // Compile-time check that TransactionMut satisfies the
 // block.IntegrateContext interface. If this line stops compiling,

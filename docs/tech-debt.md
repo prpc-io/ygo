@@ -142,12 +142,11 @@
 - **Why deferred:** ParentID arrives only with nested shared types (a Map inside an Array, etc.). We have only root-level Map; no nested-type construction yet.
 - **When to address:** with the nested-type construction path in the types layer.
 
-### Pending update buffer not implemented
+### Pending update buffer (resolved)
 
-- **Where:** missing `store.pending` / `store.pending_ds` equivalent.
-- **What:** when an incoming Update item references an Origin / RightOrigin / Parent ID the local store doesn't yet have, yrs queues the item onto a per-doc pending buffer and retries after each subsequent update. Our `Update.Apply` returns `ErrMissingDependency` and stops.
-- **Impact today:** pure two-doc round-trip (one full state encode → one decode + apply) always works because the source has all dependencies. Real network sync where updates arrive interleaved or out-of-order will fail.
-- **When to address:** when network sync (Hocuspocus-compat server) lands. Requires `Store.pending` field, retry trigger in `TransactionMut.Commit` lifecycle, and `missing` StateVector tracking per pending update.
+- **Was:** `Update.Apply` returned `ErrMissingDependency` whenever an item's Origin / RightOrigin / Parent-by-ID pointed at a clock the local store had not seen, aborting the whole apply.
+- **Resolved by:** `internal/encoding/pending.go` adds `Pending` (per-doc queue of blocks + delete-set entries keyed by client, sorted by clock). `Update.Apply` now folds missing-dep items into Pending and runs `Pending.Drain` in a loop until fixed point. Pending state lives on `doc.Doc` via the opaque `pendingState any` slot (accessed through `TransactionMut.PendingState` / `SetPendingState` so the doc package does not import encoding). Top-level helper `encoding.ApplyUpdate(d, raw)` opens a write txn, decodes, applies, and commits. Inspection helpers: `encoding.HasPending`, `encoding.GetPending`, `encoding.MissingSV` (returns the SV a peer should fetch to drain the queue). 7 tests cover out-of-order delivery, stuck-pending MissingSV, DS-before-item retry, idempotency.
+- **Remaining gap:** none for the MVP path. Optimization opportunities exist (batch the Drain inner loop with dependency-bucketed retry instead of per-client linear scan; emit a "this update added nothing" signal so callers can skip the retry pass when the pending buffer is already empty) but they are pure-perf and unblocked by benchmarks.
 
 ### Any TLV missing arrays / objects / buffers / bigint / float32
 
@@ -253,11 +252,6 @@
 - **Where:** `internal/persist/sqlite/sqlite.go` `(*Store).Flush`.
 - **What:** compaction is opt-in. Callers that never call `Flush` accumulate one row per `StoreUpdate` indefinitely. The log stays correct (replay produces converged state) but storage grows linearly with edit count.
 - **When to address:** with the sync-server layer, which is the natural place to insert a per-doc heuristic (e.g. "flush after every 100 stored updates"). Until then, library callers either schedule their own periodic flush or accept the growth.
-
-### Update.Apply still uses ErrMissingDependency, blocking interleaved sync
-
-- **Where:** `internal/encoding/update.go` `(*Update).Apply` — already tracked under "Encoding layer" above ("Pending update buffer not implemented").
-- **Cross-reference for persistence:** LoadDoc relays every stored blob into a single transaction; the in-process sequential apply always satisfies dependencies because StoreUpdate appended them in source-causal order. Real network sync (where updates arrive interleaved across clients) hits the missing pending-buffer.
 
 ### modernc.org/sqlite dependency pin is fragile
 

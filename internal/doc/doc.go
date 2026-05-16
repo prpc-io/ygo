@@ -56,6 +56,16 @@ type Doc struct {
 	gc           bool
 	mu           sync.RWMutex
 	rootBranches map[string]*block.Branch
+
+	// pendingState is an opaque pointer the encoding layer uses to
+	// store a *encoding.Pending value (queued blocks and delete-set
+	// entries awaiting unresolved dependencies). We keep the type
+	// any here so the doc package does not import encoding —
+	// encoding already imports doc, so the reverse direction would
+	// be a cycle. Read and written under the same write lock that
+	// guards the store (see PendingState / SetPendingState on
+	// TransactionMut).
+	pendingState any
 }
 
 // NewDoc returns a fresh Doc with default options and a random

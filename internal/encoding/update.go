@@ -1,7 +1,6 @@
 package encoding
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 
@@ -394,76 +393,104 @@ func decodeID(buf []byte) (block.ID, []byte, error) {
 	return block.ID{Client: client, Clock: clock}, buf[n:], nil
 }
 
-// ErrMissingDependency means an item's Origin / RightOrigin / parent
-// references an ID the local store has not yet seen. Returned by
-// Apply for items that would, in yrs, get queued onto the pending
-// buffer for retry. Until we ship the pending buffer the caller must
-// either retry the entire update later or accept that the
-// just-failed item never lands.
-var ErrMissingDependency = errors.New("encoding: update item depends on unseen ID (no pending buffer yet)")
-
-// Apply integrates every block in the update into the doc represented
-// by txn. Items are integrated in ascending clientID order (the
-// reverse of emission for diagnosability; integrate semantics are
-// order-independent within a single update once dependencies resolve).
+// Apply integrates every block and delete-set entry in u into the
+// doc represented by txn. Items whose causal dependencies the local
+// store has not yet seen — Origin, RightOrigin, or Parent-by-ID
+// references to unseen clocks — are queued in the doc's pending
+// buffer (Pending) for automatic retry on subsequent Apply calls
+// that satisfy them. Delete-set ranges targeting unseen IDs are
+// likewise queued.
 //
-// Mirrors yrs Update::integrate (update.rs:234-301), without the
-// pending-buffer / retry logic: a missing dependency aborts.
+// Always returns nil. The previous ErrMissingDependency contract
+// is retired; see docs/tech-debt.md "Pending update buffer not
+// implemented" (now resolved). The signature stays
+// `(*TransactionMut) error` for backwards compatibility with
+// callers that check the error path.
+//
+// Mirrors yrs Update::integrate (update.rs:234-301) plus the
+// pending-buffer retry loop yrs runs in `Store::try_integrate_pending`.
 func (u *Update) Apply(txn *doc.TransactionMut) error {
-	clients := make([]uint64, 0, len(u.Blocks))
-	for c := range u.Blocks {
-		clients = append(clients, c)
+	p := getOrCreatePending(txn)
+	p.foldUpdate(u, txn.Store())
+	for p.Drain(txn) > 0 {
+		// Loop until fixed point. Drain returns 0 when no further
+		// queued block could integrate this pass — the queue either
+		// drained empty or is genuinely stuck on missing deps.
 	}
-	sort.Slice(clients, func(i, j int) bool { return clients[i] < clients[j] })
-	bs := txn.Store()
-
-	for _, c := range clients {
-		blocks := u.Blocks[c]
-		for _, b := range blocks {
-			switch b.Kind {
-			case WireBlockGC:
-				if !bs.Contains(b.ID) {
-					bs.PushGC(c, b.ID.Clock, b.ID.Clock+b.Len-1)
-				}
-			case WireBlockSkip:
-				// Skip blocks reserve clock space without semantics; we
-				// drop them (they'll be re-emitted by the next encode
-				// scan if relevant).
-			case WireBlockItem:
-				it := b.Item
-				if bs.Contains(it.ID) {
-					// Already integrated locally; skip without error.
-					continue
-				}
-				if err := block.Repair(it, txn); err != nil {
-					return fmt.Errorf("repair %v: %w", it.ID, err)
-				}
-				bs.PushBlock(it)
-				if dropped := it.Integrate(txn, 0); dropped {
-					txn.Delete(it)
-				}
-			}
-		}
+	if p.IsEmpty() {
+		txn.SetPendingState(nil)
+	} else {
+		txn.SetPendingState(p)
 	}
-
-	// Apply delete set: tombstone every covered ID.
-	u.DeleteSet.Iterate(func(client uint64, ranges []Range) {
-		for _, r := range ranges {
-			clock := r.Start
-			end := r.End()
-			for clock < end {
-				cell, ok := bs.GetBlock(block.ID{Client: client, Clock: clock})
-				if !ok {
-					clock++
-					continue
-				}
-				if it := cell.AsItem(); it != nil && !it.IsDeleted() {
-					txn.Delete(it)
-				}
-				clock = cell.ClockEnd() + 1
-			}
-		}
-	})
-
 	return nil
+}
+
+// getOrCreatePending returns the doc's pending buffer, lazily
+// constructing one if none has been installed. Caller already
+// holds the doc's write lock via txn.
+func getOrCreatePending(txn *doc.TransactionMut) *Pending {
+	if s := txn.PendingState(); s != nil {
+		if p, ok := s.(*Pending); ok && p != nil {
+			return p
+		}
+	}
+	return NewPending()
+}
+
+// ApplyUpdate is the top-level convenience entry point. It opens a
+// write transaction on d, decodes raw, integrates the result, and
+// returns. Equivalent to:
+//
+//	upd, _, err := DecodeUpdate(raw)
+//	if err != nil { return err }
+//	txn := d.WriteTxn()
+//	defer txn.Commit()
+//	return upd.Apply(txn)
+//
+// Returns the decode error verbatim when raw is malformed. The
+// pending buffer absorbs any missing-dependency items silently;
+// inspect with GetPending afterwards if the caller cares.
+func ApplyUpdate(d *doc.Doc, raw []byte) error {
+	upd, _, err := DecodeUpdate(raw)
+	if err != nil {
+		return fmt.Errorf("ApplyUpdate decode: %w", err)
+	}
+	txn := d.WriteTxn()
+	defer txn.Commit()
+	return upd.Apply(txn)
+}
+
+// GetPending returns the doc's current pending buffer, or nil if
+// no pending state is installed (queue is empty). Caller MUST hold
+// at least a read transaction on d.
+//
+// The returned pointer is the live buffer — mutate at your peril.
+// Use Pending.MissingSV and Pending.BlockCount for safe inspection.
+func GetPending(t *doc.Transaction) *Pending {
+	s := t.PendingState()
+	if s == nil {
+		return nil
+	}
+	p, _ := s.(*Pending)
+	return p
+}
+
+// HasPending reports whether the doc has any queued items awaiting
+// dependencies.
+func HasPending(t *doc.Transaction) bool {
+	p := GetPending(t)
+	return !p.IsEmpty()
+}
+
+// MissingSV returns the state-vector of clocks the doc needs to
+// receive in order to drain its pending buffer. Sync-protocol
+// servers send this back to peers as a re-fetch request.
+//
+// Returns an empty SV when the pending buffer is empty.
+func MissingSV(t *doc.Transaction) store.StateVector {
+	p := GetPending(t)
+	if p == nil {
+		return make(store.StateVector)
+	}
+	return p.MissingSV(t.Store())
 }
