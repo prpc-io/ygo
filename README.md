@@ -70,7 +70,7 @@ go run ./cmd/ygo-server -addr :1234 -store data.db
 | Awareness (`internal/awareness`) | done; LWW presence map, JSON wire payload per y-protocols, self-eviction defense, SweepOutdated |
 | `server/` (WebSocket sync server) | done; `http.Handler` mount-anywhere shape, per-doc broadcaster, persists every applied update to optional `persist.Store`, awareness disconnect tombstones |
 | `cmd/ygo-server` (Hocuspocus-compat binary) | done; stand-alone WS server with optional sqlite persistence via `-store` flag |
-| `gomobile/` (bytes-only subset for iOS/Android) | done; bindable `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods only; pure-Go (no CGO); `gomobile bind` toolchain verification scheduled for v1.0 |
+| `gomobile/` (bytes-only subset for iOS/Android) | done; bindable `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods only; pure-Go (no CGO). `gomobile bind -target=ios,iossimulator` **verified end-to-end** on Xcode 16 + Go 1.26 — produces a valid `Ygo.xcframework` with both real-device (arm64) and simulator (arm64+x86_64) slices, drop-in for any Xcode project. See [gomobile/README.md](gomobile/README.md). Android AAR build documented; NDK install deferred. |
 | V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.{EncodeV2,DecodeV2}` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; bidirectional cross-language fixtures vs `yjs@13.6.20` |
 | dmonad/crdt-benchmarks B1-B4 port | done; B1.1-B1.11 / B2.1-B2.4 / B3.1+3+4 / B4 (260k-edit real-world LaTeX trace). Baseline in [BENCHMARKS.md](BENCHMARKS.md). After search markers landed, B4 op-throughput is within ~1.1× of yrs's published numbers |
 | Undo manager / Snapshots / Subdocs / Y.Array.move / GC merging | planned for v1.0; see [ROADMAP](#roadmap) |
@@ -130,7 +130,7 @@ Hardware: Apple M3, Go 1.26. yrs's published B4 numbers on similar hardware are 
 
 ## Roadmap
 
-Towards v1.0: Undo manager · Snapshots · Subdocs · GC merging · Y.Array.move · external security audit · documentation site · `gomobile bind` toolchain verification · 100+ cross-language fixtures (currently 96).
+Towards v1.0: Undo manager · Snapshots · Subdocs · GC merging · Y.Array.move · external security audit · documentation site · Android AAR build verification (iOS xcframework already verified end-to-end) · 100+ cross-language fixtures (currently 96).
 
 Per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md). Detailed design decisions in [DESIGN.md](DESIGN.md).
 

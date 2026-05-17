@@ -216,14 +216,15 @@
 
 ## Public API surface
 
-### gomobile bind subset (partially resolved)
+### gomobile bind subset (iOS resolved; Android NDK pending)
 
 - **Was:** the marquee "pure-Go = gomobile bind works" claim was structurally correct (no CGO) but operationally untested; an adopter running `gomobile bind github.com/Deln0r/ygo` would find most of the rich API silently filtered out (`any` / `map` / callbacks / non-byte slices).
-- **Partially resolved by:** new `gomobile/` package exporting only the bindable subset — `Doc` and `Awareness` wrappers with bytes-in/bytes-out methods (NewDoc / NewDocWithClientID / ApplyUpdate / EncodeStateAsUpdate / EncodeStateVector / EncodeDiff / HasPending / MissingSV / NewAwareness / SetLocalState / LocalState / RemoveLocalState / EncodeAll / Apply). 6 tests prove the bytes-only round-trip. Package builds clean with `CGO_ENABLED=0`. Shared-type mutation (Map.Set / Array.Push / Text.Insert) is NOT exposed here — adopters either bytes-only or extend this package with typed setters.
+- **Resolved by (Go-side):** `gomobile/` package exposes the bindable subset only — `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods (NewDoc / NewDocWithClientID / ApplyUpdate / EncodeStateAsUpdate / EncodeStateVector / EncodeDiff / HasPending / MissingSV / NewAwareness / SetLocalState / LocalState / RemoveLocalState / EncodeAll / Apply). 6 tests prove the bytes-only round-trip. Package builds clean with `CGO_ENABLED=0`.
+- **Resolved by (iOS toolchain — May 2026):** `gomobile bind -target=ios,iossimulator` produces a valid `Ygo.xcframework` end-to-end on Xcode 16 + Go 1.26 / macOS 26 Apple Silicon. Both slices are real Apple frameworks: `ios-arm64/Ygo.framework` (6.6 MB, real-device) + `ios-arm64_x86_64-simulator/Ygo.framework` (13 MB universal). Auto-generated Objective-C headers (`Ygo.h`, `Gomobile.objc.h`, `Universe.objc.h`, `ref.h`) preserve all the Go doc-comments on every method. Adopters drop the xcframework into Xcode, import via the generated Swift bridge. See [gomobile/README.md](/gomobile/README.md) for exact commands. **NB:** `gomobile bind` needs `golang.org/x/mobile/bind` resolvable in the module graph; main `go.mod` doesn't carry the dep (would bump `go` directive past 1.22 and break CI matrix), adopters `go get golang.org/x/mobile/bind` in their fresh checkout before running bind.
 - **Remaining gaps:**
-  1. **Actual `gomobile bind` verification** — CI does not run `gomobile bind -target=ios` or `-target=android` because the toolchain requires Xcode / Android NDK. The Go-side surface is structurally compatible; the actual generated Java / Swift bindings have not been inspected.
+  1. **Android AAR end-to-end verification** — `gomobile bind -target=android` build steps are documented in [gomobile/README.md](/gomobile/README.md). Requires Android SDK + NDK installed side-by-side via Android Studio's SDK Manager. NDK install is a manual GUI step (Tools → SDK Manager → SDK Tools → "NDK (Side by side)") that wasn't completed in the May 2026 verification session. iOS framework alone establishes the "pure-Go = mobile-native" claim; Android is bonus until a downstream Android adopter materializes.
   2. **Typed mobile shared-type API** — if a real mobile adopter wants Map.SetString / Array.PushStringSlice etc., the gomobile package can be extended with monomorphic typed variants (~200-400 LOC depending on how many type combinations matter).
-- **When to address:** (1) when a mobile adopter brings their toolchain. (2) when a mobile adopter brings a concrete use case.
+- **When to address:** (1) when a mobile adopter brings an Android use case (NDK install + retry the documented bind command — should "just work"). (2) when a mobile adopter brings a concrete typed-API use case.
 
 ## Sync protocol / WebSocket server
 
