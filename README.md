@@ -1,12 +1,18 @@
 # ygo
 
 [![CI](https://github.com/Deln0r/ygo/actions/workflows/test.yml/badge.svg)](https://github.com/Deln0r/ygo/actions/workflows/test.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Deln0r/ygo.svg)](https://pkg.go.dev/github.com/Deln0r/ygo)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Deln0r/ygo)](https://goreportcard.com/report/github.com/Deln0r/ygo)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go Version](https://img.shields.io/badge/go-1.22%2B-00ADD8.svg)](go.mod)
+[![Yjs Protocol](https://img.shields.io/badge/Yjs%20protocol-V1%20%2B%20V2-7c3aed.svg)](https://github.com/yjs/yjs)
+[![Live Demo](https://img.shields.io/badge/live%20demo-ygo.deln0r.com-22c55e.svg)](https://ygo.deln0r.com)
 
 Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collaborative applications.
 
-ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**, so JavaScript clients running `yjs@13.x` synchronize directly with Go servers (and vice versa) — both directions verified by 96 cross-language fixture scenarios against `yjs@13.6.20`. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` works for native iOS and Android.
+ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**, so JavaScript clients running `yjs@13.x` synchronize directly with Go servers (and vice versa) — both directions verified by **109 cross-language fixture scenarios** against `yjs@13.6.20`. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
+
+**Live demo:** open [ygo.deln0r.com](https://ygo.deln0r.com) in two browser tabs and start typing — same protocol any standard Yjs ecosystem client speaks, with a pure-Go server behind it.
 
 ## Quick start
 
@@ -70,7 +76,7 @@ go run ./cmd/ygo-server -addr :1234 -store data.db
 | Awareness (`internal/awareness`) | done; LWW presence map, JSON wire payload per y-protocols, self-eviction defense, SweepOutdated |
 | `server/` (WebSocket sync server) | done; `http.Handler` mount-anywhere shape, per-doc broadcaster, persists every applied update to optional `persist.Store`, awareness disconnect tombstones |
 | `cmd/ygo-server` (Hocuspocus-compat binary) | done; stand-alone WS server with optional sqlite persistence via `-store` flag |
-| `gomobile/` (bytes-only subset for iOS/Android) | done; bindable `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods only; pure-Go (no CGO). `gomobile bind -target=ios,iossimulator` **verified end-to-end** on Xcode 16 + Go 1.26 — produces a valid `Ygo.xcframework` with both real-device (arm64) and simulator (arm64+x86_64) slices, drop-in for any Xcode project. See [gomobile/README.md](gomobile/README.md). Android AAR build documented; NDK install deferred. |
+| `gomobile/` (bytes-only subset for iOS/Android) | done; bindable `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods only; pure-Go (no CGO). Both targets **verified end-to-end** on Xcode 16 + NDK 27 + Go 1.26: produces a valid `Ygo.xcframework` (real-device arm64 + simulator universal, 6.6 + 13 MB) and a valid Android `.aar` (4 archs incl. arm64-v8a / armeabi-v7a / x86 / x86_64, 8.4 MB), each drop-in for the respective IDE. See [gomobile/README.md](gomobile/README.md) for the exact commands. |
 | V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.{EncodeV2,DecodeV2}` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; bidirectional cross-language fixtures vs `yjs@13.6.20` |
 | dmonad/crdt-benchmarks B1-B4 port | done; B1.1-B1.11 / B2.1-B2.4 / B3.1+3+4 / B4 (260k-edit real-world LaTeX trace). Baseline in [BENCHMARKS.md](BENCHMARKS.md). After search markers landed, B4 op-throughput is within ~1.1× of yrs's published numbers |
 | Undo manager / Snapshots / Subdocs / Y.Array.move / GC merging | planned for v1.0; see [ROADMAP](#roadmap) |
@@ -91,11 +97,11 @@ go run ./cmd/ygo-server -addr :1234 -store data.db
 
 ## Wire compatibility
 
-The single most-important guarantee of this project is byte-level wire compatibility with `yjs@13.x`. This is enforced by **96 cross-language fixture scenarios**:
+The single most-important guarantee of this project is byte-level wire compatibility with `yjs@13.x`. This is enforced by **109 cross-language fixture scenarios**:
 
-- **25 V1 forward fixtures** (`testdata/yjs-updates.json`) — JS Yjs encodes via `Y.encodeStateAsUpdate`, Go decodes and applies, state matches.
-- **29 V2 forward fixtures** (`testdata/yjs-update-v2-fixtures.json`) — same with `Y.encodeStateAsUpdateV2`.
-- **42 reverse fixtures** (`testdata/go-updates.json` + `go-update-v2-fixtures.json`) — Go encodes via `EncodeStateAsUpdate` / `EncodeStateAsUpdateV2`, JS Yjs decodes via `Y.applyUpdate` / `Y.applyUpdateV2`, state matches.
+- **29 V1 forward fixtures** (`testdata/yjs-updates.json`) — JS Yjs encodes via `Y.encodeStateAsUpdate`, Go decodes and applies, state matches.
+- **32 V2 forward fixtures** (`testdata/yjs-update-v2-fixtures.json`) — same with `Y.encodeStateAsUpdateV2`.
+- **48 reverse fixtures** (`testdata/go-updates.json` + `go-update-v2-fixtures.json`) — Go encodes via `EncodeStateAsUpdate` / `EncodeStateAsUpdateV2`, JS Yjs decodes via `Y.applyUpdate` / `Y.applyUpdateV2`, state matches.
 
 The fixtures regenerate from pinned `yjs@13.6.20` + `lib0@0.2.93` + `y-protocols@1.0.6` on every CI run; `git diff --exit-code testdata/` catches byte-level regressions.
 
@@ -130,7 +136,7 @@ Hardware: Apple M3, Go 1.26. yrs's published B4 numbers on similar hardware are 
 
 ## Roadmap
 
-Towards v1.0: Undo manager · Snapshots · Subdocs · GC merging · Y.Array.move · external security audit · documentation site · Android AAR build verification (iOS xcframework already verified end-to-end) · 100+ cross-language fixtures (currently 96).
+Towards v1.0: Undo manager · Snapshots · Subdocs · GC merging · Y.Array.move · commit-time block squash · external security audit · documentation site.
 
 Per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md). Detailed design decisions in [DESIGN.md](DESIGN.md).
 

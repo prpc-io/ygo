@@ -234,6 +234,21 @@ const scenarios = [
       t.insert(t.length, s[i]);
     }
   }),
+
+  // --- Edge scenarios (parity with V1 set for v1.0 fixture count) ---------
+  captureMap("Map.set with empty string key", "x", 109, (m) => {
+    m.set("", "empty-key-value");
+    m.set("nonempty", "for contrast");
+  }),
+
+  captureArray("Array.delete entire range (empty result)", "x", 209, (a) => {
+    a.push(["a", "b", "c"]);
+    a.delete(0, 3);
+  }),
+
+  captureText("Text deeply nested non-BMP (combining marks + surrogates)", "x", 310, (t) => {
+    t.insert(0, "é🧑‍💻");
+  }),
 ];
 
 const out = {

@@ -213,6 +213,28 @@ const scenarios = [
     t.insert(0, "a😀c");
     t.insert(1, "B"); // between a and 😀; idx in UTF-16 units
   }),
+
+  // --- Edge / stress scenarios (push count over 100 for v1.0 bar) ----------
+  captureMap("Map.set with empty string key", "x", 109, (m) => {
+    m.set("", "empty-key-value");
+    m.set("nonempty", "for contrast");
+  }),
+
+  captureArray("Array.delete entire range (empty result)", "x", 209, (a) => {
+    a.push(["a", "b", "c"]);
+    a.delete(0, 3);
+  }),
+
+  captureText("Text empty insert is no-op", "x", 309, (t) => {
+    t.insert(0, "before");
+    t.insert(6, "");
+    t.insert(6, "-after");
+  }),
+
+  captureText("Text deeply nested non-BMP (combining marks + surrogates)", "x", 310, (t) => {
+    // e + combining acute + emoji + zero-width-joiner + family modifier
+    t.insert(0, "é🧑‍💻"); // 7 UTF-16 units total
+  }),
 ];
 
 const out = {

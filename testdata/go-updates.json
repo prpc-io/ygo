@@ -228,6 +228,33 @@
           "text": "hello"
         }
       ]
+    },
+    {
+      "description": "Map empty-string key",
+      "go_client_id": 109,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "01026d00280101780001770f656d7074792d6b65792d76616c756528010178086e6f6e656d70747901770c666f7220636f6e747261737400",
+      "expected_map": {
+        "": "empty-key-value",
+        "nonempty": "for contrast"
+      }
+    },
+    {
+      "description": "Array delete entire range",
+      "go_client_id": 209,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0101d10100080101780377016177016277016301d101010003"
+    },
+    {
+      "description": "Text non-BMP combining + ZWJ family",
+      "go_client_id": 310,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "0101b60200040101780dc3a9f09fa791e2808df09f92bb00",
+      "expected_text": "é🧑‍💻",
+      "expected_length": 6
     }
   ]
 }

@@ -370,6 +370,34 @@
       "update_hex": "0000029306000001041e1b786162636465666768696a6b6c6d6e6f707172737475767778797a011a0101000001010000",
       "expected_text": "abcdefghijklmnopqrstuvwxyz",
       "expected_length": 26
+    },
+    {
+      "description": "Map.set with empty string key",
+      "js_client_id": 109,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "000002ad01000001280f0a78786e6f6e656d70747901000108010100024100010200770f656d7074792d6b65792d76616c7565770c666f7220636f6e747261737400",
+      "expected_map": {
+        "": "empty-key-value",
+        "nonempty": "for contrast"
+      }
+    },
+    {
+      "description": "Array.delete entire range (empty result)",
+      "js_client_id": 209,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "00000291030000010103017801010100010301010001d101010002",
+      "expected_array": []
+    },
+    {
+      "description": "Text deeply nested non-BMP (combining marks + surrogates)",
+      "js_client_id": 310,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "000002b60400000104110e78c3a9f09fa791e2808df09f92bb01060101000001010000",
+      "expected_text": "é🧑‍💻",
+      "expected_length": 6
     }
   ]
 }

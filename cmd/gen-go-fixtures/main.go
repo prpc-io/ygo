@@ -296,6 +296,23 @@ func captureAll(enc encoder) []scenario {
 			xt := f.InsertXmlText(txn, 1)
 			must(xt.Insert(txn, 0, "hello"))
 		}),
+
+		// --- Edge scenarios (mirror V1/V2 forward set so reverse counts cross 100 too) ---
+		captureMap(enc, "Map empty-string key", "x", 109,
+			[]string{"", "nonempty"},
+			func(m *ygo.Map, txn *ygo.TransactionMut) {
+				m.Set(txn, "", "empty-key-value")
+				m.Set(txn, "nonempty", "for contrast")
+			}),
+
+		captureArray(enc, "Array delete entire range", "x", 209, func(a *ygo.Array, txn *ygo.TransactionMut) {
+			a.InsertRange(txn, 0, []any{"a", "b", "c"})
+			a.Delete(txn, 0, 3)
+		}),
+
+		captureText(enc, "Text non-BMP combining + ZWJ family", "x", 310, func(t *ygo.Text, txn *ygo.TransactionMut) {
+			must(t.Insert(txn, 0, "é🧑‍💻"))
+		}),
 	}
 }
 

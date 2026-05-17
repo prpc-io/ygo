@@ -264,6 +264,43 @@
       "update_hex": "0103b4020004010178016184b4020005f09f988063c4b40200b40201014200",
       "expected_text": "aB😀c",
       "expected_length": 5
+    },
+    {
+      "description": "Map.set with empty string key",
+      "js_client_id": 109,
+      "root_kind": "map",
+      "root_name": "x",
+      "update_hex": "01026d00280101780001770f656d7074792d6b65792d76616c756528010178086e6f6e656d70747901770c666f7220636f6e747261737400",
+      "expected_map": {
+        "": "empty-key-value",
+        "nonempty": "for contrast"
+      }
+    },
+    {
+      "description": "Array.delete entire range (empty result)",
+      "js_client_id": 209,
+      "root_kind": "array",
+      "root_name": "x",
+      "update_hex": "0101d10100010101780301d101010003",
+      "expected_array": []
+    },
+    {
+      "description": "Text empty insert is no-op",
+      "js_client_id": 309,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "0101b50200040101780c6265666f72652d616674657200",
+      "expected_text": "before-after",
+      "expected_length": 12
+    },
+    {
+      "description": "Text deeply nested non-BMP (combining marks + surrogates)",
+      "js_client_id": 310,
+      "root_kind": "text",
+      "root_name": "x",
+      "update_hex": "0101b60200040101780e65cc81f09fa791e2808df09f92bb00",
+      "expected_text": "é🧑‍💻",
+      "expected_length": 7
     }
   ]
 }

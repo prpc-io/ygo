@@ -40,21 +40,55 @@ Xcode 16+, Go 1.26, macOS 26 (Apple Silicon, May 2026).
 ## Verified Android AAR build
 
 ```bash
-# Requires Android SDK + NDK side-by-side installed via Android Studio's
-# SDK Manager (Tools → SDK Manager → SDK Tools → "NDK (Side by side)").
-export ANDROID_HOME=$HOME/Library/Android/sdk
-export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/<version>
+# One-time: install NDK + at least one SDK platform via sdkmanager.
+# (Android Studio's first-launch wizard installs the SDK but not NDK.)
+SDK=$HOME/Library/Android/sdk
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+$SDK/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.0.12077973"
+$SDK/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-21"
 
-go get golang.org/x/mobile/bind
-$(go env GOPATH)/bin/gomobile bind -target=android \
+# Per-build:
+export ANDROID_HOME=$SDK
+export ANDROID_NDK_HOME=$SDK/ndk/27.0.12077973
+go get golang.org/x/mobile/bind   # gomobile build dependency
+
+$(go env GOPATH)/bin/gomobile bind \
+    -target=android \
+    -androidapi 21 \
     -o /tmp/ygo.aar \
     github.com/Deln0r/ygo/gomobile
 ```
 
-`gomobile bind -target=android` produces an `.aar` (Android
-archive) consumable from any Gradle Android project. NDK
-installation status as of v0.9: deferred per developer
-preference — toolchain end-to-end verified for iOS first.
+Produces an `.aar` (Android archive) ~8.4 MB containing native
+JNI libraries for all four standard Android architectures:
+
+| Slice | Size |
+|---|---|
+| `jni/arm64-v8a/libgojni.so` (modern devices) | 3.8 MB |
+| `jni/armeabi-v7a/libgojni.so` (older 32-bit) | 3.7 MB |
+| `jni/x86_64/libgojni.so` (emulator) | 4.1 MB |
+| `jni/x86/libgojni.so` (older emulator) | 3.7 MB |
+
+Plus `classes.jar` exposing the Java surface:
+- `gomobile.Doc` — the CRDT document handle (NewDoc / ApplyUpdate
+  / EncodeStateAsUpdate / EncodeStateVector / EncodeDiff /
+  HasPending / MissingSV)
+- `gomobile.Awareness` — the presence layer
+- `gomobile.Gomobile` — package-level static helpers
+  (`NewDoc()`, `NewDocWithClientID(long)`, `NewAwareness(long)`)
+- `go.Seq` + supporting runtime classes
+
+Drop the `.aar` into your Android Studio project's
+`app/libs/` directory, add `implementation files('libs/ygo.aar')`
+to `build.gradle`, and `import gomobile.Doc;` from Kotlin or
+Java. Verified on Android Studio Ladybug + NDK 27.0 + Go 1.26 /
+macOS 26 Apple Silicon (May 2026).
+
+**NB on `androidapi 21`**: NDK 27 dropped support for API levels
+below 21 (Android 5.0 Lollipop). Without the explicit
+`-androidapi 21` flag, gomobile defaults to 16 and fails with
+"unsupported API version". 21+ covers >99% of Android devices
+in service.
 
 ## Note on `go.mod`
 
