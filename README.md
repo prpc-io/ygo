@@ -111,7 +111,7 @@ The fixtures regenerate from pinned `yjs@13.6.20` + `lib0@0.2.93` + `y-protocols
 |---|---|---|---|
 | `yjs` (npm) | Node / browser | The reference CRDT implementation | Ygo's wire-format target |
 | `y-websocket` | Node | Reference WebSocket server | Ygo's `cmd/ygo-server` is a Go-native equivalent |
-| `Hocuspocus` | Node | Production WebSocket server with auth, persistence, extensions | Ygo's `cmd/ygo-server` speaks the same envelope (Auth / Stateless / Close / SyncStatus) |
+| `Hocuspocus` | Node | Production WebSocket server with auth, persistence, extensions | Ygo's `cmd/ygo-server` speaks the same 8-message envelope (Sync / Awareness / QueryAwareness / Auth / Stateless / BroadcastStateless / Close / SyncStatus) |
 | `yrs` | Rust | Reference Rust port | Ygo's executable spec for porting decisions |
 | `y-leveldb`, `y-indexeddb` | Node / browser | Persistence backends | Ygo's `persist/sqlite` is a Go-native equivalent |
 | **Ygo** | **Go** | **CRDT engine + WS server + persistence in one monorepo, pure-Go for native mobile** | **This project** |
