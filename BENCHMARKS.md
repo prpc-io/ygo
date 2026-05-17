@@ -135,9 +135,11 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
 
 - **B4 op-throughput** is ~0.041 ms / edit (259,778 ops / 10.5 s)
   after search markers landed; was ~0.32 ms / edit on the pre-
-  marker baseline. yrs's published B4 numbers run sub-10s on
-  similar hardware — we are now within ~1.1× of yrs on this
-  workload, comfortably under DESIGN.md's "within 2× of yrs" target.
+  marker baseline. yrs's published B4 numbers run sub-10 s on
+  similar hardware — we are within roughly 1.0-1.5× of yrs on
+  this workload (no direct head-to-head harness yet to pin the
+  ratio exactly; native yrs hardware-normalized numbers needed),
+  comfortably under DESIGN.md's "within 2× of yrs" target.
 
 ## Comparison with yjs / ywasm (published numbers)
 

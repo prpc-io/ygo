@@ -1,4 +1,4 @@
-# ygo
+# Ygo
 
 [![CI](https://github.com/Deln0r/ygo/actions/workflows/test.yml/badge.svg)](https://github.com/Deln0r/ygo/actions/workflows/test.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Deln0r/ygo.svg)](https://pkg.go.dev/github.com/Deln0r/ygo)
@@ -10,7 +10,7 @@
 
 Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collaborative applications.
 
-ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**, so JavaScript clients running `yjs@13.x` synchronize directly with Go servers (and vice versa) — both directions verified by **109 cross-language fixture scenarios** against `yjs@13.6.20`. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
+Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**, so JavaScript clients running `yjs@13.x` synchronize directly with Go servers (and vice versa) — both directions verified by **109 cross-language fixture scenarios** against `yjs@13.6.20`. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
 
 **Live demo:** open [ygo.deln0r.com](https://ygo.deln0r.com) in two browser tabs and start typing — same protocol any standard Yjs ecosystem client speaks, with a pure-Go server behind it.
 
@@ -64,7 +64,7 @@ go run ./cmd/ygo-server -addr :1234 -store data.db
 | `internal/block` (Item, Content, Branch, Splice, Integrate-YATA, TrySquash, Repair, search markers) | done; full YATA conflict resolution + per-branch LRU position cache |
 | `internal/store` (BlockStore, ItemSlice, Materialize) | done |
 | `internal/doc` (Doc, Transaction, TransactionMut) | done; lock semantics + root-branch registry |
-| `internal/encoding` (StateVector, IdSet, Update encode/decode/apply, Pending buffer, V1 + V2 codecs) | done; JS Yjs → Go proven by 25 V1 + 29 V2 fixture scenarios; Go → JS proven by 42 reverse fixtures (Map / Array / Text / XmlFragment) |
+| `internal/encoding` (StateVector, IdSet, Update encode/decode/apply, Pending buffer, V1 + V2 codecs) | done; JS Yjs → Go proven by 29 V1 + 32 V2 fixture scenarios; Go → JS proven by 48 reverse fixtures (Map / Array / Text / XmlFragment) |
 | `internal/utf16` (UTF-16 length / byte-offset / surrogate-aware split) | done |
 | `internal/types/Map` (Set / Get / Delete / Has / Len / Range / Clear + SetMap / SetArray / SetText) | done; nested-type construction supported |
 | `internal/types/Array` (Insert / InsertRange / Push / Delete / Get / Len / Range / ToSlice + InsertMap / InsertArray / InsertText) | done; nested-type construction supported |
@@ -78,22 +78,22 @@ go run ./cmd/ygo-server -addr :1234 -store data.db
 | `cmd/ygo-server` (Hocuspocus-compat binary) | done; stand-alone WS server with optional sqlite persistence via `-store` flag |
 | `gomobile/` (bytes-only subset for iOS/Android) | done; bindable `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods only; pure-Go (no CGO). Both targets **verified end-to-end** on Xcode 16 + NDK 27 + Go 1.26: produces a valid `Ygo.xcframework` (real-device arm64 + simulator universal, 6.6 + 13 MB) and a valid Android `.aar` (4 archs incl. arm64-v8a / armeabi-v7a / x86 / x86_64, 8.4 MB), each drop-in for the respective IDE. See [gomobile/README.md](gomobile/README.md) for the exact commands. |
 | V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.{EncodeV2,DecodeV2}` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; bidirectional cross-language fixtures vs `yjs@13.6.20` |
-| dmonad/crdt-benchmarks B1-B4 port | done; B1.1-B1.11 / B2.1-B2.4 / B3.1+3+4 / B4 (260k-edit real-world LaTeX trace). Baseline in [BENCHMARKS.md](BENCHMARKS.md). After search markers landed, B4 op-throughput is within ~1.1× of yrs's published numbers |
-| Undo manager / Snapshots / Subdocs / Y.Array.move / GC merging | planned for v1.0; see [ROADMAP](#roadmap) |
+| dmonad/crdt-benchmarks B1-B4 port | done; B1.1-B1.11 / B2.1-B2.4 / B3.1+3+4 / B4 (260k-edit real-world LaTeX trace). Baseline in [BENCHMARKS.md](BENCHMARKS.md). |
+| Undo manager / Snapshots / Subdocs / Y.Array.move / GC merging / commit-time block squash | planned for v1.0; see [Roadmap](#roadmap) |
 
 ## Goals
 
-1. **Binary protocol compatibility** with [yjs](https://github.com/yjs/yjs) v13.x in both V1 and V2 wire formats. Byte-for-byte. JS clients sync with Go servers and vice versa, bidirectionally verified.
+1. **Binary protocol compatibility** with [Yjs](https://github.com/yjs/yjs) v13.x in both V1 and V2 wire formats. Byte-for-byte. JS clients sync with Go servers and vice versa, bidirectionally verified.
 2. **Idiomatic Go API.** Channels for events, explicit transactions, `error` returns.
 3. **Pure Go.** No CGO. `gomobile bind` works for iOS/Android.
 4. **Pluggable persistence** with `modernc.org/sqlite` reference implementation.
-5. **Performance within 2× of [yrs](https://github.com/y-crdt/y-crdt)** on `dmonad/crdt-benchmarks` B1-B4 — currently within ~1.1× on B4. See [BENCHMARKS.md](BENCHMARKS.md).
+5. **Performance within 2× of [yrs](https://github.com/y-crdt/y-crdt)** on `dmonad/crdt-benchmarks` B1-B4. See [BENCHMARKS.md](BENCHMARKS.md).
 
 ## Non-goals
 
-- C-FFI surface. [yrs](https://github.com/y-crdt/y-crdt) already provides this; ygo's unique value is pure-Go native binaries.
-- Drop-in replacement for the Node.js Yjs runtime. ygo is the Go port; use `yjs` itself if you want a JavaScript runtime.
-- Loro, Automerge, RGA, or other CRDT designs. ygo implements the Yjs wire format, period.
+- C-FFI surface. [Yrs](https://github.com/y-crdt/y-crdt) already provides this; Ygo's unique value is pure-Go native binaries.
+- Drop-in replacement for the Node.js Yjs runtime. Ygo is the Go port; use `yjs` itself if you want a JavaScript runtime.
+- Loro, Automerge, RGA, or other CRDT designs. Ygo implements the Yjs wire format, period.
 
 ## Wire compatibility
 
@@ -107,32 +107,35 @@ The fixtures regenerate from pinned `yjs@13.6.20` + `lib0@0.2.93` + `y-protocols
 
 ## How is this different from Hocuspocus / y-websocket / y-leveldb?
 
-| Project | Runtime | What it provides | Relationship to ygo |
+| Project | Runtime | What it provides | Relationship to Ygo |
 |---|---|---|---|
-| `yjs` (npm) | Node / browser | The reference CRDT implementation | ygo's wire-format target |
-| `y-websocket` | Node | Reference WebSocket server | ygo's `cmd/ygo-server` is a Go-native equivalent |
-| `Hocuspocus` | Node | Production WebSocket server with auth, persistence, extensions | ygo's `cmd/ygo-server` speaks the same envelope (Auth/Stateless/Close/SyncStatus) |
-| `yrs` | Rust | Reference Rust port | ygo's executable spec for porting decisions |
-| `y-leveldb`, `y-indexeddb` | Node / browser | Persistence backends | ygo's `persist/sqlite` is a Go-native equivalent |
-| **ygo** | **Go** | **CRDT engine + WS server + persistence in one monorepo, pure-Go for native mobile** | **This project** |
+| `yjs` (npm) | Node / browser | The reference CRDT implementation | Ygo's wire-format target |
+| `y-websocket` | Node | Reference WebSocket server | Ygo's `cmd/ygo-server` is a Go-native equivalent |
+| `Hocuspocus` | Node | Production WebSocket server with auth, persistence, extensions | Ygo's `cmd/ygo-server` speaks the same envelope (Auth / Stateless / Close / SyncStatus) |
+| `yrs` | Rust | Reference Rust port | Ygo's executable spec for porting decisions |
+| `y-leveldb`, `y-indexeddb` | Node / browser | Persistence backends | Ygo's `persist/sqlite` is a Go-native equivalent |
+| **Ygo** | **Go** | **CRDT engine + WS server + persistence in one monorepo, pure-Go for native mobile** | **This project** |
 
-If you have an existing Yjs deployment and want to move the server side to Go (no Node runtime, single static binary, native iOS/Android via gomobile) — ygo is the path. If you're starting fresh and your team is comfortable with Node, Hocuspocus is the mature choice.
+If you have an existing Yjs deployment and want to move the server side to Go (no Node runtime, single static binary, native iOS / Android via gomobile) — Ygo is the path. If you're starting fresh and your team is comfortable with Node, Hocuspocus is the mature choice.
 
 ## Benchmarks
 
-See [BENCHMARKS.md](BENCHMARKS.md) for the full table. Highlights from B4 (260,000-edit real-world LaTeX paper trace):
+See [BENCHMARKS.md](BENCHMARKS.md) for the full table. Highlights from B4 (259,778-edit real-world LaTeX paper trace) on Apple M3, Go 1.26:
 
-| Metric | Value |
-|---|---|
-| Apply 259,778 edits | 10.5 s (~0.041 ms / edit) |
-| V1 doc size | 1.97 MB |
-| V2 doc size | 227 KB (8.7× smaller) |
-| Encode V1 | 7.7 ms |
-| Encode V2 | 73 ms |
-| Parse V1 | 68 ms |
-| Parse V2 | 61 ms |
+| Metric | Ygo V1 | Ygo V2 | yjs (Node, Intel i5-8400) | ywasm (Intel i5-8400) |
+|---|---|---|---|---|
+| Apply all edits | 10.5 s | 10.5 s | 5.7 s | 28.7 s |
+| Encoded doc size | 1.97 MB | **227 KB** | 160 KB | 160 KB |
+| Encode time | 7.7 ms | 73 ms | 11 ms | 3 ms |
+| Parse time | 68 ms | 61 ms | 39 ms | 16 ms |
 
-Hardware: Apple M3, Go 1.26. yrs's published B4 numbers on similar hardware are sub-10 s; ygo is within ~1.1× — meets DESIGN.md's "within 2× of yrs" goal.
+**How to read this:**
+
+- **Apply throughput** — within ~1.85× of native yjs on different hardware (Apple M3 vs Intel i5-8400; the M3 is generally faster so the real ratio is closer than the wall-clock suggests). Native yrs publishes sub-10-s numbers on similar hardware, putting Ygo within roughly 1.0-1.5× of yrs and comfortably under the DESIGN.md "within 2×" target. (ywasm is yrs compiled to WebAssembly and is not representative of native yrs — wasm overhead inflates it ~5×.)
+- **V2 doc size** is competitive with yjs at 1.4× — V2's per-column RLE encoding effectively dedupes per-item overhead at the wire layer.
+- **V1 doc size** carries a known 12× regression vs yjs's V1 because commit-time block squash is deferred (every `Text.Insert` produces a separate Item, none merged with same-client adjacent-clock neighbours). The fix is paired Apply-side partial-overlap handling + commit-time squash; in the [Roadmap](#roadmap) and scoped into the v1.0 grant work. Until then, prefer V2 for persistence/snapshot workloads where size matters.
+
+A direct head-to-head harness against native yrs under identical hardware is on the roadmap but not yet run; the numbers above are honest absolute figures with hardware caveats.
 
 ## Roadmap
 
@@ -144,7 +147,8 @@ Per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items
 
 - [DESIGN.md](DESIGN.md) — project design document
 - [BENCHMARKS.md](BENCHMARKS.md) — performance baseline + B1-B4 methodology
-- [docs/yrs-port-notes/](docs/yrs-port-notes/) — per-layer ports notes describing how each yrs subsystem maps to Go
+- [gomobile/README.md](gomobile/README.md) — iOS xcframework + Android AAR build instructions
+- [docs/yrs-port-notes/](docs/yrs-port-notes/) — per-layer port notes describing how each yrs subsystem maps to Go
 - [docs/tech-debt.md](docs/tech-debt.md) — deferred work and known limitations
 - [CONTRIBUTING.md](CONTRIBUTING.md) — DCO sign-off, no CLA
 
