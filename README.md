@@ -11,9 +11,9 @@
 
 Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collaborative applications.
 
-Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**, so JavaScript clients running `yjs@13.x` synchronize directly with Go servers (and vice versa) — both directions verified by **109 cross-language fixture scenarios** against `yjs@13.6.20`. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
+Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients running `yjs@13.x` synchronize directly with Go servers and vice versa, with both directions verified through **114 cross-language fixture scenarios** generated from `yjs@13.6.20`. The same fixture suite doubles as a [cross-implementation conformance check](docs/reearth-cross-test/) for other pure-Go Yjs ports. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
 
-**Live demo:** open [ygo.deln0r.com](https://ygo.deln0r.com) in two browser tabs and start typing — same protocol any standard Yjs ecosystem client speaks, with a pure-Go server behind it.
+**Live demo:** open [ygo.deln0r.com](https://ygo.deln0r.com) in two browser tabs and start typing. Same protocol any standard Yjs ecosystem client speaks, with a pure-Go server behind it.
 
 **EU-sovereign mirror:** the repository is also published at [codeberg.org/Deln0r/ygo](https://codeberg.org/Deln0r/ygo), auto-synced from GitHub on every push (`.github/workflows/mirror-to-codeberg.yml`) for adopters who prefer or require EU-hosted code infrastructure.
 
