@@ -1,0 +1,40 @@
+=== Summary by wire/kind ===
+  V1-rev/array pass=7   fail=0   (total 7)
+  V1-rev/map   pass=5   fail=2   (total 7)
+  V1-rev/text  pass=7   fail=0   (total 7)
+  V1-rev/xml   pass=1   fail=2   (total 3)
+  V1-xml/xml   pass=2   fail=3   (total 5)
+  V1-yjs/array pass=9   fail=0   (total 9)
+  V1-yjs/map   pass=6   fail=3   (total 9)
+  V1-yjs/text  pass=11  fail=0   (total 11)
+  V2-rev/array pass=7   fail=0   (total 7)
+  V2-rev/map   pass=5   fail=2   (total 7)
+  V2-rev/text  pass=7   fail=0   (total 7)
+  V2-rev/xml   pass=1   fail=2   (total 3)
+  V2-yjs/array pass=10  fail=0   (total 10)
+  V2-yjs/map   pass=7   fail=3   (total 10)
+  V2-yjs/text  pass=12  fail=0   (total 12)
+=== TOTAL ===
+  PASS 97 / FAIL 17 / TOTAL 114
+
+=== First 10 failures (use -v for full list) ===
+  [V1-yjs/map] Map.set + Map.set same key (LWW)
+      ApplyUpdateV1: crdt: invalid update: encoding: unexpected end of input
+  [V1-yjs/map] Map.set then delete then set again
+      ApplyUpdateV1: crdt: invalid update: encoding: unexpected end of input
+  [V1-yjs/map] Map.set with empty string key
+      map mismatch: got=map[nonempty:for contrast] expected=map[:empty-key-value nonempty:for contrast]
+  [V2-yjs/map] Map.set + Map.set same key (LWW)
+      map mismatch: got=map[] expected=map[k:third]
+  [V2-yjs/map] Map.set then delete then set again
+      map mismatch: got=map[] expected=map[k:v2]
+  [V2-yjs/map] Map.set with empty string key
+      map mismatch: got=map[nonempty:for contrast] expected=map[:empty-key-value nonempty:for contrast]
+  [V1-xml/xml] single empty element
+      xml mismatch: got="<p></p>" expected="<p/>"
+  [V1-xml/xml] element with attribute
+      xml mismatch: got="<div class=\"container\"></div>" expected="<div class=\"container\"/>"
+  [V1-xml/xml] two attributes sorted in render
+      xml mismatch: got="<a class=\"link\" href=\"/\"></a>" expected="<a class=\"link\" href=\"/\"/>"
+  [V1-rev/map] Map LWW chain on same key
+      ApplyUpdateV1: crdt: invalid update: encoding: unknown Any tag

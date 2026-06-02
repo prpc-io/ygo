@@ -1,0 +1,150 @@
+=== Per-scenario ===
+  [V1-yjs/map/PASS ] empty doc, no ops
+  [V1-yjs/map/PASS ] single Map.set string
+  [V1-yjs/map/PASS ] two Map.set on different keys
+  [V1-yjs/map/PASS ] Map.set across multiple value types
+  [V1-yjs/map/FAIL ] Map.set + Map.set same key (LWW)
+                  reason: ApplyUpdateV1: crdt: invalid update: encoding: unexpected end of input
+  [V1-yjs/map/PASS ] Map.set + Map.delete
+  [V1-yjs/map/FAIL ] Map.set then delete then set again
+                  reason: ApplyUpdateV1: crdt: invalid update: encoding: unexpected end of input
+  [V1-yjs/map/PASS ] Map with unicode keys and values
+  [V1-yjs/array/PASS ] empty Array, no ops
+  [V1-yjs/array/PASS ] Array.push single value
+  [V1-yjs/array/PASS ] Array.push batch packed into one Item
+  [V1-yjs/array/PASS ] Array.push of various value types
+  [V1-yjs/array/PASS ] Array.insert in middle of packed run (split)
+  [V1-yjs/array/PASS ] Array.delete single in middle
+  [V1-yjs/array/PASS ] Array.delete range across packed run
+  [V1-yjs/array/PASS ] Array sequence of separate pushes then insert
+  [V1-yjs/text/PASS ] empty Text, no ops
+  [V1-yjs/text/PASS ] Text.insert simple ASCII
+  [V1-yjs/text/PASS ] Text two inserts at end
+  [V1-yjs/text/PASS ] Text insert in middle (split)
+  [V1-yjs/text/PASS ] Text delete single
+  [V1-yjs/text/PASS ] Text delete range
+  [V1-yjs/text/PASS ] Text Cyrillic (BMP non-ASCII)
+  [V1-yjs/text/PASS ] Text emoji (non-BMP, surrogate pair)
+  [V1-yjs/text/PASS ] Text mixed ASCII + non-BMP + insert in middle
+  [V1-yjs/map/FAIL ] Map.set with empty string key
+                  reason: map mismatch: got=map[nonempty:for contrast] expected=map[:empty-key-value nonempty:for contrast]
+  [V1-yjs/array/PASS ] Array.delete entire range (empty result)
+  [V1-yjs/text/PASS ] Text empty insert is no-op
+  [V1-yjs/text/PASS ] Text deeply nested non-BMP (combining marks + surrogates)
+  [V2-yjs/map/PASS ] empty doc, no ops
+  [V2-yjs/map/PASS ] single Map.set string
+  [V2-yjs/map/PASS ] two Map.set on different keys
+  [V2-yjs/map/PASS ] Map.set across multiple value types
+  [V2-yjs/map/FAIL ] Map.set + Map.set same key (LWW)
+                  reason: map mismatch: got=map[] expected=map[k:third]
+  [V2-yjs/map/PASS ] Map.set + Map.delete
+  [V2-yjs/map/FAIL ] Map.set then delete then set again
+                  reason: map mismatch: got=map[] expected=map[k:v2]
+  [V2-yjs/map/PASS ] Map with unicode keys and values
+  [V2-yjs/array/PASS ] empty Array, no ops
+  [V2-yjs/array/PASS ] Array.push single value
+  [V2-yjs/array/PASS ] Array.push batch packed into one Item
+  [V2-yjs/array/PASS ] Array.push of various value types
+  [V2-yjs/array/PASS ] Array.insert in middle of packed run (split)
+  [V2-yjs/array/PASS ] Array.delete single in middle
+  [V2-yjs/array/PASS ] Array.delete range across packed run
+  [V2-yjs/array/PASS ] Array sequence of separate pushes then insert
+  [V2-yjs/text/PASS ] empty Text, no ops
+  [V2-yjs/text/PASS ] Text.insert simple ASCII
+  [V2-yjs/text/PASS ] Text two inserts at end
+  [V2-yjs/text/PASS ] Text insert in middle (split)
+  [V2-yjs/text/PASS ] Text delete single
+  [V2-yjs/text/PASS ] Text delete range
+  [V2-yjs/text/PASS ] Text Cyrillic (BMP non-ASCII)
+  [V2-yjs/text/PASS ] Text emoji (non-BMP, surrogate pair)
+  [V2-yjs/text/PASS ] Text mixed ASCII + non-BMP + insert in middle
+  [V2-yjs/map/PASS ] Map with many keys (RLE compression target)
+  [V2-yjs/array/PASS ] Array large single push (ContentAny len = 50)
+  [V2-yjs/text/PASS ] Text long single insert (string column)
+  [V2-yjs/text/PASS ] Text many one-char inserts at end (constant delta)
+  [V2-yjs/map/FAIL ] Map.set with empty string key
+                  reason: map mismatch: got=map[nonempty:for contrast] expected=map[:empty-key-value nonempty:for contrast]
+  [V2-yjs/array/PASS ] Array.delete entire range (empty result)
+  [V2-yjs/text/PASS ] Text deeply nested non-BMP (combining marks + surrogates)
+  [V1-xml/xml/FAIL ] single empty element
+                  reason: xml mismatch: got="<p></p>" expected="<p/>"
+  [V1-xml/xml/FAIL ] element with attribute
+                  reason: xml mismatch: got="<div class=\"container\"></div>" expected="<div class=\"container\"/>"
+  [V1-xml/xml/PASS ] nested element with text child
+  [V1-xml/xml/PASS ] multiple siblings
+  [V1-xml/xml/FAIL ] two attributes sorted in render
+                  reason: xml mismatch: got="<a class=\"link\" href=\"/\"></a>" expected="<a class=\"link\" href=\"/\"/>"
+  [V1-rev/map/PASS ] empty Map
+  [V1-rev/map/PASS ] single Map.Set string
+  [V1-rev/map/PASS ] Map across primitive value types
+  [V1-rev/map/FAIL ] Map LWW chain on same key
+                  reason: ApplyUpdateV1: crdt: invalid update: encoding: unknown Any tag
+  [V1-rev/map/PASS ] Map.Set + Map.Delete
+  [V1-rev/map/PASS ] Map with unicode keys and values
+  [V1-rev/array/PASS ] empty Array
+  [V1-rev/array/PASS ] Array.Push single
+  [V1-rev/array/PASS ] Array.Push batch packed
+  [V1-rev/array/PASS ] Array with various value types
+  [V1-rev/array/PASS ] Array insert in middle (split)
+  [V1-rev/array/PASS ] Array delete range across packed run
+  [V1-rev/text/PASS ] empty Text
+  [V1-rev/text/PASS ] Text insert ASCII
+  [V1-rev/text/PASS ] Text two inserts
+  [V1-rev/text/PASS ] Text Cyrillic (BMP)
+  [V1-rev/text/PASS ] Text emoji (non-BMP surrogate pair)
+  [V1-rev/text/PASS ] Text delete range
+  [V1-rev/xml/PASS ] XmlFragment empty
+  [V1-rev/xml/FAIL ] XmlFragment with two elements
+                  reason: xml mismatch: got="<div></div><span></span>" expected=""
+  [V1-rev/xml/FAIL ] XmlFragment with element + text child
+                  reason: xml mismatch: got="<p></p>hello" expected=""
+  [V1-rev/map/FAIL ] Map empty-string key
+                  reason: map mismatch: got=map[nonempty:for contrast] expected=map[:empty-key-value nonempty:for contrast]
+  [V1-rev/array/PASS ] Array delete entire range
+  [V1-rev/text/PASS ] Text non-BMP combining + ZWJ family
+  [V2-rev/map/PASS ] empty Map
+  [V2-rev/map/PASS ] single Map.Set string
+  [V2-rev/map/PASS ] Map across primitive value types
+  [V2-rev/map/FAIL ] Map LWW chain on same key
+                  reason: map mismatch: got=map[] expected=map[k:third]
+  [V2-rev/map/PASS ] Map.Set + Map.Delete
+  [V2-rev/map/PASS ] Map with unicode keys and values
+  [V2-rev/array/PASS ] empty Array
+  [V2-rev/array/PASS ] Array.Push single
+  [V2-rev/array/PASS ] Array.Push batch packed
+  [V2-rev/array/PASS ] Array with various value types
+  [V2-rev/array/PASS ] Array insert in middle (split)
+  [V2-rev/array/PASS ] Array delete range across packed run
+  [V2-rev/text/PASS ] empty Text
+  [V2-rev/text/PASS ] Text insert ASCII
+  [V2-rev/text/PASS ] Text two inserts
+  [V2-rev/text/PASS ] Text Cyrillic (BMP)
+  [V2-rev/text/PASS ] Text emoji (non-BMP surrogate pair)
+  [V2-rev/text/PASS ] Text delete range
+  [V2-rev/xml/PASS ] XmlFragment empty
+  [V2-rev/xml/FAIL ] XmlFragment with two elements
+                  reason: xml mismatch: got="<div></div><span></span>" expected=""
+  [V2-rev/xml/FAIL ] XmlFragment with element + text child
+                  reason: xml mismatch: got="<p></p>hello" expected=""
+  [V2-rev/map/FAIL ] Map empty-string key
+                  reason: map mismatch: got=map[nonempty:for contrast] expected=map[:empty-key-value nonempty:for contrast]
+  [V2-rev/array/PASS ] Array delete entire range
+  [V2-rev/text/PASS ] Text non-BMP combining + ZWJ family
+=== Summary by wire/kind ===
+  V1-rev/array pass=7   fail=0   (total 7)
+  V1-rev/map   pass=5   fail=2   (total 7)
+  V1-rev/text  pass=7   fail=0   (total 7)
+  V1-rev/xml   pass=1   fail=2   (total 3)
+  V1-xml/xml   pass=2   fail=3   (total 5)
+  V1-yjs/array pass=9   fail=0   (total 9)
+  V1-yjs/map   pass=6   fail=3   (total 9)
+  V1-yjs/text  pass=11  fail=0   (total 11)
+  V2-rev/array pass=7   fail=0   (total 7)
+  V2-rev/map   pass=5   fail=2   (total 7)
+  V2-rev/text  pass=7   fail=0   (total 7)
+  V2-rev/xml   pass=1   fail=2   (total 3)
+  V2-yjs/array pass=10  fail=0   (total 10)
+  V2-yjs/map   pass=7   fail=3   (total 10)
+  V2-yjs/text  pass=12  fail=0   (total 12)
+=== TOTAL ===
+  PASS 97 / FAIL 17 / TOTAL 114
