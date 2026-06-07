@@ -121,6 +121,48 @@ func (c Content) Len(_ OffsetKind) uint64 {
 	return 0
 }
 
+// Copy returns a value copy of the content suitable for re-insertion
+// under a fresh Item ID. Used by the UndoManager's redoItem path to
+// resurrect a deleted item: the restoration carries the same payload
+// but a new identity. Mirrors yjs ContentX.copy().
+//
+// Slice-backed payloads (Anys, JSONStrs, Bytes) are cloned so the new
+// item does not share mutable backing with the original. Scalar fields
+// copy by value with the struct.
+//
+// Limitation: KindType (nested Branch), KindMove, and KindDoc carry
+// pointer payloads whose deep copy is non-trivial (a nested type has
+// its own item graph). The first UndoManager cut does not restore
+// deletions of those kinds; Copy shallow-copies the pointer and the
+// caller (redoItem) refuses to resurrect such items. Tracked in
+// docs/undo-manager-design.md.
+func (c Content) Copy() Content {
+	out := c
+	if c.Anys != nil {
+		out.Anys = append([]Any(nil), c.Anys...)
+	}
+	if c.JSONStrs != nil {
+		out.JSONStrs = append([]string(nil), c.JSONStrs...)
+	}
+	if c.Bytes != nil {
+		out.Bytes = append([]byte(nil), c.Bytes...)
+	}
+	return out
+}
+
+// CopyableForUndo reports whether Copy produces a faithful, fully
+// independent restoration for this content kind. False for the
+// pointer-payload kinds (Type, Move, Doc) the first UndoManager cut
+// does not handle.
+func (c Content) CopyableForUndo() bool {
+	switch c.Kind {
+	case KindType, KindMove, KindDoc:
+		return false
+	default:
+		return true
+	}
+}
+
 // Split cuts the content at offset and returns the right half, mutating
 // the receiver to hold the left half. Returns an error if the content
 // kind is not splittable or offset is out of range.

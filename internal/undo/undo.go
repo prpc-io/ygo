@@ -6,6 +6,7 @@ import (
 
 	"github.com/Deln0r/ygo/internal/block"
 	"github.com/Deln0r/ygo/internal/doc"
+	"github.com/Deln0r/ygo/internal/encoding"
 )
 
 // DefaultCaptureTimeout groups subsequent edits into the same StackItem
@@ -133,39 +134,52 @@ func (um *UndoManager) onAfterTransaction(mut *doc.TransactionMut) {
 		return
 	}
 
-	// Scope filter: at least one changedType must be in scope (or
-	// descended from one). If nothing in scope changed, this
-	// transaction is invisible to this UndoManager.
-	if !um.touchesScope(mut.ChangedTypes()) {
+	// Build the StackItem for this transaction, filtering every
+	// touched item by scope. We resolve items through the store
+	// rather than trusting changedTypes, which the types layer does
+	// not yet populate (see internal/doc AddChangedType note).
+	store := mut.Store()
+	si := newStackItem()
+
+	// Insertions: per-client newly-created clocks (afterState minus
+	// beforeState), keeping only items whose parent is in scope.
+	before := mut.BeforeState()
+	after := mut.AfterState()
+	for client, end := range after {
+		clock := before[client]
+		for clock < end {
+			it := store.GetItem(block.ID{Client: client, Clock: clock})
+			if it == nil {
+				clock++
+				continue
+			}
+			if um.itemInScope(it) {
+				si.Insertions.Insert(client, it.ID.Clock, it.Len)
+			}
+			clock = it.ID.Clock + it.Len
+		}
+	}
+
+	// Deletions: every item tombstoned this transaction whose parent
+	// is in scope. DeletedIDs reports the head ID; we read the full
+	// Len off the resolved item.
+	for _, id := range mut.DeletedIDs() {
+		it := store.GetItem(id)
+		if it == nil {
+			continue
+		}
+		if um.itemInScope(it) {
+			si.Deletions.Insert(it.ID.Client, it.ID.Clock, it.Len)
+		}
+	}
+
+	// Nothing in scope changed: this transaction is invisible to us.
+	if si.Insertions.ClientCount() == 0 && si.Deletions.ClientCount() == 0 {
 		return
 	}
 
 	um.mu.Lock()
 	defer um.mu.Unlock()
-
-	// Build the StackItem for this transaction.
-	si := newStackItem()
-
-	// Insertions: per-client (afterState - beforeState).
-	before := mut.BeforeState()
-	after := mut.AfterState()
-	for client, end := range after {
-		start := before[client]
-		if end > start {
-			si.Insertions.Insert(client, start, end-start)
-		}
-	}
-
-	// Deletions: every ID tombstoned during this transaction.
-	for _, id := range mut.DeletedIDs() {
-		// DeletedIDs reports the head of each deleted item; the
-		// Len of the item is not exposed here. The simplest
-		// correct thing is to record a singleton range and rely on
-		// IdSet.Insert to merge consecutive deletions on the same
-		// client. A follow-up will expose item-Len in
-		// TransactionMut so we record the full range in one shot.
-		si.Deletions.Insert(id.Client, id.Clock, 1)
-	}
 
 	now := um.nowFn()
 	undoing := um.undoing
@@ -250,34 +264,107 @@ func (um *UndoManager) Close() {
 	}
 }
 
-// Undo pops the top of the undo stack and replays it against the
-// doc. Returns true if a StackItem was applied. In this skeleton
-// commit the actual replay is unimplemented; the call drains the top
-// of the stack and returns false, signalling "nothing happened".
-// The replay logic lands with Item.Redone in the next commit.
+// Undo pops the top of the undo stack and replays it against the doc:
+// items inserted during the captured window are deleted, items deleted
+// during the window are resurrected via redoItem. Returns true if a
+// StackItem was applied, false if the stack was empty or the manager
+// is closed.
+//
+// The replay runs in its own WriteTxn with Origin set to the manager,
+// so the resulting AfterTransaction is routed to the redo stack rather
+// than appended to the undo stack.
+//
+// Undo must not be called from inside an active transaction on the
+// same doc, and concurrent Undo / Redo calls must be serialised by the
+// caller.
 func (um *UndoManager) Undo() bool {
 	um.mu.Lock()
-	defer um.mu.Unlock()
 	if um.closed || len(um.undoStack) == 0 {
+		um.mu.Unlock()
 		return false
 	}
-	// TODO(undo-execute): pop, run a WriteTxn with Origin=um and
-	// undoing=true, walk Insertions to delete, walk Deletions to
-	// redoItem-resurrect. Falls through to the AfterTransaction
-	// handler which pushes the resulting StackItem to redoStack.
-	return false
+	si := um.undoStack[len(um.undoStack)-1]
+	um.undoStack = um.undoStack[:len(um.undoStack)-1]
+	um.undoing = true
+	um.mu.Unlock()
+
+	um.applyStackItem(si)
+
+	um.mu.Lock()
+	um.undoing = false
+	um.mu.Unlock()
+	return true
 }
 
-// Redo is the mirror of Undo. See the Undo note about the skeleton
-// state.
+// Redo is the mirror of Undo, replaying the top of the redo stack.
+// Returns true if a StackItem was applied.
 func (um *UndoManager) Redo() bool {
 	um.mu.Lock()
-	defer um.mu.Unlock()
 	if um.closed || len(um.redoStack) == 0 {
+		um.mu.Unlock()
 		return false
 	}
-	// TODO(undo-execute): mirror of Undo.
-	return false
+	si := um.redoStack[len(um.redoStack)-1]
+	um.redoStack = um.redoStack[:len(um.redoStack)-1]
+	um.redoing = true
+	um.mu.Unlock()
+
+	um.applyStackItem(si)
+
+	um.mu.Lock()
+	um.redoing = false
+	um.mu.Unlock()
+	return true
+}
+
+// applyStackItem runs the deletion-of-insertions and resurrection-of-
+// deletions for one StackItem inside a fresh WriteTxn. The umorigin
+// marker on the transaction makes the resulting AfterTransaction route
+// to the opposite stack.
+func (um *UndoManager) applyStackItem(si *StackItem) {
+	txn := um.doc.WriteTxn()
+	txn.Origin = um
+	defer txn.Commit()
+
+	// Delete everything that was inserted during the captured window.
+	// An inserted item may have been resurrected by an earlier Undo /
+	// Redo (its Redone chain points at a newer live item); follow that
+	// chain so we delete the current representative, not a stale
+	// tombstone.
+	si.Insertions.Iterate(func(client uint64, ranges []encoding.Range) {
+		for _, r := range ranges {
+			clock := r.Start
+			for clock < r.End() {
+				it := txn.GetItem(block.ID{Client: client, Clock: clock})
+				if it == nil {
+					clock++
+					continue
+				}
+				advance := it.ID.Clock + it.Len
+				live := followRedone(txn, it)
+				if live != nil && !live.IsDeleted() {
+					txn.Delete(live)
+				}
+				clock = advance
+			}
+		}
+	})
+
+	// Resurrect everything that was deleted during the captured window.
+	si.Deletions.Iterate(func(client uint64, ranges []encoding.Range) {
+		for _, r := range ranges {
+			clock := r.Start
+			for clock < r.End() {
+				it := txn.GetItem(block.ID{Client: client, Clock: clock})
+				if it == nil {
+					clock++
+					continue
+				}
+				redoItem(txn, it)
+				clock = it.ID.Clock + it.Len
+			}
+		}
+	})
 }
 
 // isTrackedOrigin reports whether origin is in trackedOrigins. The
@@ -291,17 +378,14 @@ func (um *UndoManager) isTrackedOrigin(origin any) bool {
 	return ok
 }
 
-// touchesScope reports whether any of the changedTypes lies under
-// the configured scope. A direct match (one of the root branches in
-// scope) is the common case; nested types walk up Branch.Item.Parent
-// looking for a scope match.
-func (um *UndoManager) touchesScope(changedTypes []*block.Branch) bool {
-	for _, b := range changedTypes {
-		if um.isInScope(b) {
-			return true
-		}
+// itemInScope reports whether an item's parent branch lies under the
+// configured scope. Items with an unresolved or non-branch parent are
+// out of scope.
+func (um *UndoManager) itemInScope(it *block.Item) bool {
+	if it.Parent.Kind != block.ParentBranch || it.Parent.Branch == nil {
+		return false
 	}
-	return false
+	return um.isInScope(it.Parent.Branch)
 }
 
 // isInScope walks up the parent chain of b. The chain terminates at

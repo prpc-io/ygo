@@ -6,145 +6,133 @@ import (
 
 	"github.com/Deln0r/ygo/internal/block"
 	"github.com/Deln0r/ygo/internal/doc"
+	"github.com/Deln0r/ygo/internal/types"
 	"github.com/Deln0r/ygo/internal/undo"
 )
 
-// helper: WriteTxn that registers a phantom changedType on the given
-// branch so the scope filter sees activity. We push a real item too
-// so afterState advances for the client.
-func writeAndCommit(t *testing.T, d *doc.Doc, branch *block.Branch, clock uint64) {
+// mapSet drives a real types.Map.Set through a WriteTxn with the
+// default (nil) origin, the way an application would.
+func mapSet(t *testing.T, d *doc.Doc, m *types.Map, key string, value any) {
 	t.Helper()
 	txn := d.WriteTxn()
-	txn.AddChangedType(branch, nil)
-	it := &block.Item{
-		ID:  block.ID{Client: d.ClientID(), Clock: clock},
-		Len: 1,
-	}
-	txn.Store().PushBlock(it)
+	m.Set(txn, key, value)
 	txn.Commit()
 }
 
-// TestUndoManager_EmptyDoc_NoCaptures verifies that constructing an
-// UndoManager and committing transactions that do not touch the
-// scope keeps the stacks empty.
-func TestUndoManager_EmptyDoc_NoCaptures(t *testing.T) {
+// TestUndoManager_OutOfScope_NoCapture verifies that mutating a branch
+// outside the configured scope captures nothing.
+func TestUndoManager_OutOfScope_NoCapture(t *testing.T) {
 	d := doc.NewDoc()
-	scopedBranch := d.Branch("watched")
-	otherBranch := d.Branch("ignored")
+	watched := types.NewMap(d.Branch("watched"))
+	other := types.NewMap(d.Branch("ignored"))
 
-	um := undo.NewUndoManager(d, []*block.Branch{scopedBranch})
+	um := undo.NewUndoManager(d, []*block.Branch{watched.Branch()})
 	defer um.Close()
 
-	if um.CanUndo() || um.CanRedo() {
-		t.Fatal("fresh UndoManager already has stack entries")
-	}
-
-	// Commit a transaction that does not touch the scope.
-	txn := d.WriteTxn()
-	txn.AddChangedType(otherBranch, nil)
-	txn.Commit()
+	mapSet(t, d, other, "k", "v")
 
 	if um.CanUndo() {
-		t.Error("transaction outside scope captured")
+		t.Error("out-of-scope mutation captured")
 	}
 }
 
-// TestUndoManager_OneTransaction_OneStackItem captures a single
-// in-scope transaction into a single StackItem.
-func TestUndoManager_OneTransaction_OneStackItem(t *testing.T) {
+// TestUndoManager_InScope_Captures verifies a single in-scope Map.Set
+// pushes one undo entry and leaves redo empty.
+func TestUndoManager_InScope_Captures(t *testing.T) {
 	d := doc.NewDoc()
-	b := d.Branch("watched")
-	um := undo.NewUndoManager(d, []*block.Branch{b})
+	m := types.NewMap(d.Branch("watched"))
+	um := undo.NewUndoManager(d, []*block.Branch{m.Branch()})
 	defer um.Close()
 
-	writeAndCommit(t, d, b, 0)
+	mapSet(t, d, m, "k", "v")
 
 	if !um.CanUndo() {
-		t.Fatal("in-scope transaction did not push to undo stack")
+		t.Fatal("in-scope Map.Set did not push undo entry")
 	}
 	if um.CanRedo() {
-		t.Error("redo stack should still be empty")
+		t.Error("redo stack should be empty")
 	}
 }
 
-// TestUndoManager_GroupingWithinCaptureTimeout verifies two
-// transactions inside the captureTimeout window collapse into one
-// StackItem on the undo stack.
+// TestUndoManager_GroupingWithinCaptureTimeout verifies several Map
+// writes inside the capture window collapse into a single undo entry.
 func TestUndoManager_GroupingWithinCaptureTimeout(t *testing.T) {
 	d := doc.NewDoc()
-	b := d.Branch("watched")
-	um := undo.NewUndoManager(d, []*block.Branch{b}, undo.Options{
+	m := types.NewMap(d.Branch("watched"))
+	um := undo.NewUndoManager(d, []*block.Branch{m.Branch()}, undo.Options{
 		CaptureTimeout: time.Hour, // never time out within the test
 	})
 	defer um.Close()
 
-	writeAndCommit(t, d, b, 0)
-	writeAndCommit(t, d, b, 1)
-	writeAndCommit(t, d, b, 2)
+	mapSet(t, d, m, "a", 1)
+	mapSet(t, d, m, "b", 2)
+	mapSet(t, d, m, "c", 3)
 
-	// All three transactions should fold into one StackItem.
-	if !um.CanUndo() {
-		t.Fatal("no stack item after three transactions")
+	// One Undo should reverse all three grouped writes.
+	if !um.Undo() {
+		t.Fatal("Undo returned false")
 	}
-	// Drain via Clear and confirm we only ever had one entry.
-	// Skeleton Undo returns false, but Clear empties both stacks.
-	um.Clear()
-	if um.CanUndo() || um.CanRedo() {
-		t.Error("Clear did not empty stacks")
+	if m.Get("a") != nil || m.Get("b") != nil || m.Get("c") != nil {
+		t.Errorf("grouped Undo did not clear all keys: a=%v b=%v c=%v",
+			m.Get("a"), m.Get("b"), m.Get("c"))
+	}
+	if um.CanUndo() {
+		t.Error("undo stack should be empty after single grouped Undo")
 	}
 }
 
-// TestUndoManager_NoGroupingAfterStopCapturing verifies that
-// StopCapturing forces the next transaction to open a fresh StackItem
-// regardless of captureTimeout.
-func TestUndoManager_NoGroupingAfterStopCapturing(t *testing.T) {
+// TestUndoManager_StopCapturing_Splits verifies StopCapturing forces a
+// fresh undo entry, so two writes need two Undos.
+func TestUndoManager_StopCapturing_Splits(t *testing.T) {
 	d := doc.NewDoc()
-	b := d.Branch("watched")
-	// Force CaptureTimeout very large so grouping would happen
-	// without StopCapturing.
-	um := undo.NewUndoManager(d, []*block.Branch{b}, undo.Options{
+	m := types.NewMap(d.Branch("watched"))
+	um := undo.NewUndoManager(d, []*block.Branch{m.Branch()}, undo.Options{
 		CaptureTimeout: time.Hour,
 	})
 	defer um.Close()
 
-	writeAndCommit(t, d, b, 0)
+	mapSet(t, d, m, "a", 1)
 	um.StopCapturing()
-	writeAndCommit(t, d, b, 1)
+	mapSet(t, d, m, "b", 2)
 
-	// We expect two separate StackItems. There is no public stack-
-	// length accessor; we approximate by clearing and confirming
-	// that both stacks were drained. A future commit adds an
-	// explicit accessor.
-	um.Clear()
-	if um.CanUndo() {
-		t.Error("Clear did not drain")
+	// First Undo reverses only "b".
+	um.Undo()
+	if m.Get("b") != nil {
+		t.Errorf("first Undo did not clear b: %v", m.Get("b"))
+	}
+	if m.Get("a") == nil {
+		t.Errorf("first Undo wrongly cleared a")
+	}
+	// Second Undo reverses "a".
+	um.Undo()
+	if m.Get("a") != nil {
+		t.Errorf("second Undo did not clear a: %v", m.Get("a"))
 	}
 }
 
-// TestUndoManager_RemoteOriginIsIgnored verifies that a transaction
-// with a non-tracked origin does not push a StackItem.
-func TestUndoManager_RemoteOriginIsIgnored(t *testing.T) {
+// TestUndoManager_RemoteOriginIgnored verifies a non-tracked origin
+// is not captured.
+func TestUndoManager_RemoteOriginIgnored(t *testing.T) {
 	d := doc.NewDoc()
-	b := d.Branch("watched")
-	um := undo.NewUndoManager(d, []*block.Branch{b})
+	m := types.NewMap(d.Branch("watched"))
+	um := undo.NewUndoManager(d, []*block.Branch{m.Branch()})
 	defer um.Close()
 
 	txn := d.WriteTxn()
 	txn.Origin = "remote"
-	txn.AddChangedType(b, nil)
+	m.Set(txn, "k", "v")
 	txn.Commit()
 
 	if um.CanUndo() {
-		t.Error("remote-origin transaction captured")
+		t.Error("remote-origin mutation captured")
 	}
 }
 
-// TestUndoManager_Close_Idempotent confirms Close can be called
-// multiple times safely.
+// TestUndoManager_Close_Idempotent confirms Close is safe to repeat.
 func TestUndoManager_Close_Idempotent(t *testing.T) {
 	d := doc.NewDoc()
-	b := d.Branch("watched")
-	um := undo.NewUndoManager(d, []*block.Branch{b})
+	m := types.NewMap(d.Branch("watched"))
+	um := undo.NewUndoManager(d, []*block.Branch{m.Branch()})
 	um.Close()
 	um.Close()
 	if um.CanUndo() {
