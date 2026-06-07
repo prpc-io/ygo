@@ -66,6 +66,65 @@ type Doc struct {
 	// guards the store (see PendingState / SetPendingState on
 	// TransactionMut).
 	pendingState any
+
+	// afterTxnHandlers fires in registration order at the end of
+	// TransactionMut.Commit, after the write-lock state is finalised
+	// but before the mutex is released. UndoManager and any other
+	// observer (logging, sync provider broadcast, etc.) subscribe
+	// via OnAfterTransaction. Guarded by the doc write lock.
+	afterTxnHandlers []*registeredAfterTxn
+}
+
+// registeredAfterTxn wraps a handler so each registration has a
+// stable identity for unsubscribe. Function values are not directly
+// comparable in Go; comparing pointers to the wrapper sidesteps that.
+type registeredAfterTxn struct {
+	fn AfterTransactionHandler
+}
+
+// AfterTransactionHandler is invoked once per committed write
+// transaction, after the change-tracking state on TransactionMut has
+// been finalised. The handler runs with the doc's write lock still
+// held; it must not acquire ReadTxn or WriteTxn on the same doc.
+// Heavy or blocking work should be dispatched to a goroutine.
+type AfterTransactionHandler func(*TransactionMut)
+
+// OnAfterTransaction registers fn to fire at the end of every future
+// TransactionMut.Commit. Returns an unsubscribe function that removes
+// the handler; calling it more than once is a no-op.
+//
+// Registration order is preserved; handlers fire in registration
+// order. Panics in a handler propagate and are NOT caught — they
+// leave the doc write lock held by the panicking goroutine, which is
+// the same behaviour as any other panic during Commit.
+func (d *Doc) OnAfterTransaction(fn AfterTransactionHandler) func() {
+	h := &registeredAfterTxn{fn: fn}
+	d.mu.Lock()
+	d.afterTxnHandlers = append(d.afterTxnHandlers, h)
+	d.mu.Unlock()
+	return func() {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		for i, r := range d.afterTxnHandlers {
+			if r == h {
+				d.afterTxnHandlers = append(d.afterTxnHandlers[:i], d.afterTxnHandlers[i+1:]...)
+				return
+			}
+		}
+	}
+}
+
+// fireAfterTransactionHandlers runs every registered handler with
+// the given mut. Called from TransactionMut.Commit while holding the
+// write lock. Snapshot the slice first so a handler that calls
+// OnAfterTransaction (registers a new observer) does not see itself
+// added mid-iteration.
+func (d *Doc) fireAfterTransactionHandlers(mut *TransactionMut) {
+	handlers := make([]*registeredAfterTxn, len(d.afterTxnHandlers))
+	copy(handlers, d.afterTxnHandlers)
+	for _, h := range handlers {
+		h.fn(mut)
+	}
 }
 
 // NewDoc returns a fresh Doc with default options and a random

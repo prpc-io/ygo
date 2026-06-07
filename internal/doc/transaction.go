@@ -122,7 +122,11 @@ func (t *TransactionMut) Commit() {
 		return
 	}
 	t.closed = true
-	// TODO: lifecycle steps 1-6.
+	// TODO: lifecycle steps 1-6 (squash, GC, observers, update emission).
+	// AfterTransaction handlers fire here, while the write lock is
+	// still held. They observe a finalised TransactionMut state and
+	// must not start a new ReadTxn / WriteTxn on the same doc.
+	t.doc.fireAfterTransactionHandlers(t)
 	t.doc.mu.Unlock()
 }
 
