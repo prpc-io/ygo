@@ -84,6 +84,16 @@ type TransactionMut struct {
 	// ChangedTypes accessor.
 	changedTypes map[*block.Branch]struct{}
 
+	// beforeState is the per-client clock head snapshot taken when
+	// this transaction acquired the write lock. afterState is the
+	// same snapshot taken immediately before observer dispatch in
+	// Commit. UndoManager (and any future change-tracking observer)
+	// derives the per-transaction insertion ranges as
+	// afterState - beforeState. Read by BeforeState / AfterState
+	// accessors.
+	beforeState store.StateVector
+	afterState  store.StateVector
+
 	// mergeBlocks would accumulate item IDs that should be
 	// considered for try_squash at Commit. Will be added back when
 	// Item.Integrate gains a MarkForMerge call site and Commit
@@ -102,7 +112,10 @@ type TransactionMut struct {
 // "this will hang forever" comment).
 func (d *Doc) WriteTxn() *TransactionMut {
 	d.mu.Lock()
-	return &TransactionMut{doc: d}
+	return &TransactionMut{
+		doc:         d,
+		beforeState: d.store.GetStateVector(),
+	}
 }
 
 // Commit runs the post-commit lifecycle and releases the write lock.
@@ -122,6 +135,11 @@ func (t *TransactionMut) Commit() {
 		return
 	}
 	t.closed = true
+	// Snapshot the post-mutation state vector before any handlers fire
+	// so observers see a stable afterState. Together with beforeState
+	// captured in WriteTxn, this is the data UndoManager needs to
+	// compute per-transaction insertion ranges.
+	t.afterState = t.doc.store.GetStateVector()
 	// TODO: lifecycle steps 1-6 (squash, GC, observers, update emission).
 	// AfterTransaction handlers fire here, while the write lock is
 	// still held. They observe a finalised TransactionMut state and
@@ -129,6 +147,19 @@ func (t *TransactionMut) Commit() {
 	t.doc.fireAfterTransactionHandlers(t)
 	t.doc.mu.Unlock()
 }
+
+// BeforeState returns the per-client clock-head snapshot taken when
+// this transaction acquired the write lock. Read-only; do not mutate
+// the returned map.
+//
+// Together with AfterState, the per-transaction insertion ranges are
+// `afterState[client] - beforeState[client]` per client.
+func (t *TransactionMut) BeforeState() store.StateVector { return t.beforeState }
+
+// AfterState returns the per-client clock-head snapshot taken at the
+// start of Commit. Populated only after Commit runs; before Commit the
+// returned map is empty.
+func (t *TransactionMut) AfterState() store.StateVector { return t.afterState }
 
 // Doc returns the Doc this transaction was created from.
 func (t *TransactionMut) Doc() *Doc { return t.doc }
