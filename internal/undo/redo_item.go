@@ -43,13 +43,6 @@ func redoItem(txn *doc.TransactionMut, item *block.Item) *block.Item {
 		return txn.MaterializeCleanStart(*item.Redone)
 	}
 
-	// First cut handles map-keyed items only. Sequence items
-	// (ParentSub == nil) need the left/right redone-tracing logic
-	// that arrives with Array / Text undo.
-	if item.ParentSub == nil {
-		return nil
-	}
-
 	// Parent must be a resolved branch. Nested-type parents whose
 	// own item is deleted need recursive parent-redo; deferred.
 	if item.Parent.Kind != block.ParentBranch || item.Parent.Branch == nil {
@@ -68,8 +61,15 @@ func redoItem(txn *doc.TransactionMut, item *block.Item) *block.Item {
 		return nil
 	}
 
-	// Map insert position: the current tail under this key becomes the
-	// left neighbour, mirroring Map.Set. right is nil for map items.
+	if item.ParentSub != nil {
+		return redoMapItem(txn, item, parent)
+	}
+	return redoSequenceItem(txn, item, parent)
+}
+
+// redoMapItem resurrects a map-keyed item: the current tail under the
+// key becomes the left neighbour (mirroring Map.Set), right is nil.
+func redoMapItem(txn *doc.TransactionMut, item *block.Item, parent *block.Branch) *block.Item {
 	var left *block.Item
 	var origin *block.ID
 	if existing, ok := parent.Map[*item.ParentSub]; ok && existing != nil {
@@ -103,4 +103,90 @@ func redoItem(txn *doc.TransactionMut, item *block.Item) *block.Item {
 
 	item.Redone = &nextID
 	return redone
+}
+
+// redoSequenceItem resurrects a positional (Array / Text) item at its
+// original slot. Following yjs redoItem's ParentSub == nil branch: the
+// left neighbour is traced through any redone chains until it lands in
+// the same parent, and the deleted item itself anchors the right side.
+func redoSequenceItem(txn *doc.TransactionMut, item *block.Item, parent *block.Branch) *block.Item {
+	// Trace the left neighbour to its current live representative in
+	// the same parent. A neighbour that was itself undone/redone is
+	// followed through its Redone chain.
+	left := item.Left
+	for left != nil {
+		trace := left
+		for trace != nil && !sameParentBranch(trace, parent) {
+			if trace.Redone == nil {
+				trace = nil
+			} else {
+				trace = txn.MaterializeCleanStart(*trace.Redone)
+			}
+		}
+		if trace != nil && sameParentBranch(trace, parent) {
+			left = trace
+			break
+		}
+		left = left.Left
+	}
+
+	// The right anchor starts at the deleted item itself (yjs: right =
+	// item). For a same-parent item the trace resolves immediately.
+	right := item
+	for right != nil {
+		trace := right
+		for trace != nil && !sameParentBranch(trace, parent) {
+			if trace.Redone == nil {
+				trace = nil
+			} else {
+				trace = txn.MaterializeCleanStart(*trace.Redone)
+			}
+		}
+		if trace != nil && sameParentBranch(trace, parent) {
+			right = trace
+			break
+		}
+		right = right.Right
+	}
+
+	var origin, rightOrigin *block.ID
+	if left != nil {
+		lid := left.LastID()
+		origin = &lid
+	}
+	if right != nil {
+		rid := right.ID
+		rightOrigin = &rid
+	}
+
+	clientID := txn.Doc().ClientID()
+	clock := txn.Store().GetClock(clientID)
+	nextID := block.ID{Client: clientID, Clock: clock}
+
+	redone := &block.Item{
+		ID:          nextID,
+		Len:         item.Len,
+		Origin:      origin,
+		Left:        left,
+		RightOrigin: rightOrigin,
+		Right:       right,
+		Content:     item.Content.Copy(),
+		Parent:      block.Parent{Kind: block.ParentBranch, Branch: parent},
+		Flags:       block.FlagCountable,
+	}
+	redone.SetKeep(true)
+
+	txn.Store().PushBlock(redone)
+	if dropped := redone.Integrate(txn, 0); dropped {
+		txn.Delete(redone)
+		return nil
+	}
+
+	item.Redone = &nextID
+	return redone
+}
+
+// sameParentBranch reports whether it sits directly under parent.
+func sameParentBranch(it *block.Item, parent *block.Branch) bool {
+	return it != nil && it.Parent.Kind == block.ParentBranch && it.Parent.Branch == parent
 }
