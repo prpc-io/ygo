@@ -25,6 +25,7 @@ import (
 	"github.com/Deln0r/ygo/internal/encoding"
 	"github.com/Deln0r/ygo/internal/store"
 	"github.com/Deln0r/ygo/internal/types"
+	"github.com/Deln0r/ygo/internal/undo"
 )
 
 // Doc is a single CRDT replica — the local view of a collaborative
@@ -127,6 +128,54 @@ func NewXmlElement(d *Doc, name string) *XmlElement {
 
 func NewXmlText(d *Doc, name string) *XmlText {
 	return types.NewXmlText(d.Branch(name))
+}
+
+// UndoManager records local mutations under a scope of shared types
+// and reverses them with Undo / Redo. It subscribes to the doc's
+// transaction lifecycle; close it with Close when no longer needed.
+//
+// Scope is given as the typed wrappers themselves (a Map, Array, Text,
+// or XML type). Only mutations under one of the scoped types, made by
+// a tracked origin (local edits by default), are captured. Bursty edits
+// within the capture-timeout window collapse into a single undo step.
+//
+//	m := ygo.NewMap(d, "settings")
+//	um := ygo.NewUndoManager(d, m)
+//	defer um.Close()
+//	// ... edits to m ...
+//	um.Undo() // reverts the last captured step
+type UndoManager = undo.UndoManager
+
+// UndoManagerOptions configures an UndoManager. A zero value selects
+// the defaults: 500 ms capture timeout, track local (nil) origin only.
+type UndoManagerOptions = undo.Options
+
+// UndoScope is anything an UndoManager can watch. Every shared-type
+// wrapper (Map, Array, Text, XmlFragment, XmlElement, XmlText)
+// satisfies it via its Branch method.
+type UndoScope interface {
+	Branch() *Branch
+}
+
+// NewUndoManager creates an UndoManager on d watching the given scope
+// of shared types. At least one scope type is required.
+//
+//	um := ygo.NewUndoManager(d, myMap, myArray)
+func NewUndoManager(d *Doc, scope ...UndoScope) *UndoManager {
+	return newUndoManager(d, UndoManagerOptions{}, scope)
+}
+
+// NewUndoManagerWithOptions is NewUndoManager with explicit options.
+func NewUndoManagerWithOptions(d *Doc, opts UndoManagerOptions, scope ...UndoScope) *UndoManager {
+	return newUndoManager(d, opts, scope)
+}
+
+func newUndoManager(d *Doc, opts UndoManagerOptions, scope []UndoScope) *UndoManager {
+	branches := make([]*block.Branch, len(scope))
+	for i, s := range scope {
+		branches[i] = s.Branch()
+	}
+	return undo.NewUndoManager(d, branches, opts)
 }
 
 // Awareness tracks per-client ephemeral state (cursors, names,
