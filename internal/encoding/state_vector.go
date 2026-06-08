@@ -23,7 +23,12 @@ func EncodeStateVector(sv store.StateVector, buf []byte) []byte {
 	for c := range sv {
 		clients = append(clients, c)
 	}
-	sort.Slice(clients, func(i, j int) bool { return clients[i] < clients[j] })
+	// DESCENDING client order, matching yjs writeStateVector
+	// ("sort((a, b) => b[0] - a[0])"). Ascending was byte-incompatible
+	// with yjs for multi-client state vectors; single-client SVs (most
+	// existing fixtures) never exposed it. Surfaced by the multi-client
+	// snapshot fixture, 2026-06-08.
+	sort.Slice(clients, func(i, j int) bool { return clients[i] > clients[j] })
 
 	buf = lib0.WriteVarUint(buf, uint64(len(clients)))
 	for _, c := range clients {

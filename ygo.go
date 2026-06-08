@@ -222,6 +222,35 @@ func EncodeStateVector(d *Doc) []byte {
 	return encoding.EncodeStateVector(t.Store().GetStateVector(), nil)
 }
 
+// Snapshot is a point-in-time marker of a document's history (the
+// deleted ID ranges plus per-client clock heads as of the snapshot).
+// Encode it with EncodeSnapshot for storage; reconstruct the document
+// state it captured with RestoreSnapshot (see the Snapshot doc).
+//
+// For time-travel to work, create the doc with GC disabled
+// (ygo.NewDocWithOptions with DisableGC) so deleted content the
+// snapshot references is retained.
+type Snapshot = encoding.Snapshot
+
+// CreateSnapshot captures the current state of d as a Snapshot.
+// Byte-compatible with yjs `Y.snapshot(doc)`.
+func CreateSnapshot(d *Doc) Snapshot {
+	t := d.ReadTxn()
+	defer t.Close()
+	return encoding.CreateSnapshot(t.Store())
+}
+
+// EncodeSnapshot returns the V1 wire encoding of s, byte-compatible
+// with yjs `Y.encodeSnapshot`.
+func EncodeSnapshot(s Snapshot) []byte { return encoding.EncodeSnapshot(s) }
+
+// DecodeSnapshot parses a V1 snapshot produced by EncodeSnapshot or
+// yjs `Y.encodeSnapshot`.
+func DecodeSnapshot(buf []byte) (Snapshot, error) { return encoding.DecodeSnapshot(buf) }
+
+// EqualSnapshots reports whether two snapshots are identical.
+func EqualSnapshots(a, b Snapshot) bool { return encoding.EqualSnapshots(a, b) }
+
 // EncodeDiff returns the wire-encoded V1 update covering the
 // blocks d has that the remote (per remoteSVBytes) does not. A
 // nil remoteSVBytes is treated as the empty SV — emit everything.

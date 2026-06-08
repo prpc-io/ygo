@@ -1,0 +1,61 @@
+{
+  "generator": "yjs@13.6.20 (Snapshot V1)",
+  "scenarios": [
+    {
+      "description": "empty doc",
+      "snapshot_hex": "0000",
+      "sv": {},
+      "ds": {}
+    },
+    {
+      "description": "single client array insert + delete",
+      "snapshot_hex": "0107010101010703",
+      "sv": {
+        "7": 3
+      },
+      "ds": {
+        "7": [
+          [
+            1,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "description": "single client multiple deletes",
+      "snapshot_hex": "012a0200010301012a05",
+      "sv": {
+        "42": 5
+      },
+      "ds": {
+        "42": [
+          [
+            0,
+            1
+          ],
+          [
+            3,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "description": "multi-client merged with deletes (descending DS order)",
+      "snapshot_hex": "01030100020263020303",
+      "sv": {
+        "3": 3,
+        "99": 2
+      },
+      "ds": {
+        "3": [
+          [
+            0,
+            2
+          ]
+        ]
+      }
+    }
+  ]
+}
