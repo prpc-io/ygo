@@ -81,6 +81,9 @@ jobs:
       - name: regenerate RLE fixtures
         working-directory: testdata/gen
         run: node gen-rle.mjs
+      - name: regenerate undo fixtures
+        working-directory: testdata/gen
+        run: node gen-undo.mjs
       - name: regenerate reverse (Go encodes → JS decodes) fixtures
         run: go run ./cmd/gen-go-fixtures
       - name: verify no diff
@@ -92,6 +95,7 @@ jobs:
           go test ./internal/awareness/... -run TestFixtures
           go test ./internal/sync/... -run TestFixtures
           go test ./internal/types/... -run TestFixtures_DecodeApplyJSXmlUpdates
+          go test ./internal/undo/... -run TestUndoFixtures
       - name: validate reverse fixtures (JS applies Go-encoded bytes)
         working-directory: testdata/gen
         run: node validate-go-fixtures.mjs

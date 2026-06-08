@@ -57,6 +57,27 @@ For a collaborative server backend, see [`cmd/ygo-server`](cmd/ygo-server) — a
 go run ./cmd/ygo-server -addr :1234 -store data.db
 ```
 
+### Undo / Redo
+
+Wrap any shared types in an `UndoManager` to get scoped, grouped Undo / Redo:
+
+```go
+d := ygo.NewDoc()
+m := ygo.NewMap(d, "settings")
+
+um := ygo.NewUndoManager(d, m) // watch m; defaults to local edits, 500ms grouping
+defer um.Close()
+
+txn := d.WriteTxn()
+m.Set(txn, "theme", "dark")
+txn.Commit()
+
+um.Undo() // m no longer has "theme"
+um.Redo() // "theme" == "dark" again
+```
+
+Only local edits under the watched types are captured; remote updates applied via `ApplyUpdate` are not. Rapid edits inside the capture-timeout window collapse into one undo step; call `um.StopCapturing()` to force a boundary. The semantics match `yjs@13.6.20`'s `UndoManager`, checked by cross-language conformance fixtures.
+
 ## Status
 
 **Alpha. Public API may change before v1.0.** The CRDT engine and wire format are production-stable in the sense that they have been validated bidirectionally against `yjs@13.6.20`; the API surface (function signatures, package layout) may still see small refinements.
@@ -82,7 +103,8 @@ go run ./cmd/ygo-server -addr :1234 -store data.db
 | `gomobile/` (bytes-only subset for iOS/Android) | done; bindable `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods only; pure-Go (no CGO). Both targets **verified end-to-end** on Xcode 16 + NDK 27 + Go 1.26: produces a valid `Ygo.xcframework` (real-device arm64 + simulator universal, 6.6 + 13 MB) and a valid Android `.aar` (4 archs incl. arm64-v8a / armeabi-v7a / x86 / x86_64, 8.4 MB), each drop-in for the respective IDE. See [gomobile/README.md](gomobile/README.md) for the exact commands. |
 | V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.{EncodeV2,DecodeV2}` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; bidirectional cross-language fixtures vs `yjs@13.6.20` |
 | dmonad/crdt-benchmarks B1-B4 port | done; B1.1-B1.11 / B2.1-B2.4 / B3.1+3+4 / B4 (260k-edit real-world LaTeX trace). Baseline in [BENCHMARKS.md](BENCHMARKS.md). |
-| Undo manager / Snapshots / Subdocs / Y.Array.move / GC merging / commit-time block squash | planned for v1.0; see [Roadmap](#roadmap) |
+| `UndoManager` (`internal/undo`) | done; scoped Undo / Redo over Map / Array / Text with capture-timeout grouping, tracked-origin filtering, and a `Redone` chain for deletion restore. Cross-language conformance vs `yjs@13.6.20` (7 scenarios) |
+| Snapshots / Subdocs / Y.Array.move / GC merging / commit-time block squash | planned for v1.0; see [Roadmap](#roadmap) |
 
 ## Goals
 
@@ -142,7 +164,7 @@ A direct head-to-head harness against native yrs under identical hardware is on 
 
 ## Roadmap
 
-Towards v1.0: Undo manager · Snapshots · Subdocs · GC merging · Y.Array.move · commit-time block squash · external security audit · documentation site.
+Towards v1.0: Snapshots · Subdocs · GC merging · Y.Array.move · commit-time block squash · external security audit · documentation site. (Undo manager: done.)
 
 Per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md). Detailed design decisions in [DESIGN.md](DESIGN.md).
 
