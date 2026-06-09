@@ -11,11 +11,19 @@
 
 Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collaborative applications.
 
-Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients running `yjs@13.x` synchronize directly with Go servers and vice versa, with both directions verified through **114 cross-language fixture scenarios** generated from `yjs@13.6.20`. The same fixture suite doubles as a [cross-implementation conformance check](docs/reearth-cross-test/) for other pure-Go Yjs ports. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
+Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients running `yjs@13.x` synchronize directly with Go servers and vice versa, with both directions verified through **124 cross-language fixture scenarios** generated from `yjs@13.6.20`. The same fixture suite doubles as a [cross-implementation conformance check](docs/reearth-cross-test/) for other pure-Go Yjs ports. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
+
+## Highlights
+
+- **Byte-for-byte wire compatibility, verified in both directions.** 124 cross-language fixtures (generated from `yjs@13.6.20`) cover the V1 and V2 update formats, snapshots, subdocuments, awareness, and the sync protocol, JS to Go and Go to JS. The suite runs in CI on every push, so a regression in either direction fails the build.
+- **Pure Go, no CGO.** Builds for any Go target, compiles to WASM, and cross-compiles freely. `gomobile bind` produces a verified iOS xcframework and Android AAR. No V8, no embedded JavaScript engine, no Rust FFI bridge.
+- **Complete CRDT type set.** Map, Array, Text (rich-text formatting, Quill deltas, embeds), XML types, Awareness, UndoManager, Snapshots / time-travel, and Subdocuments.
+- **Compact V1 encoding.** Commit-time block squash collapses per-character edits into single items (about 1 byte per character in V1), so document size stays competitive instead of carrying per-item overhead.
+- **Forward-looking wire handling.** 53-bit client IDs throughout, byte-verified above 2^32, ready for the wider client-ID space `yjs@14` introduces.
+- **Ready-to-run server.** A Hocuspocus-compatible WebSocket server with optional sqlite persistence ships in `cmd/ygo-server`.
+- **EU-sovereign mirror** on [codeberg.org/Deln0r/ygo](https://codeberg.org/Deln0r/ygo), auto-synced from GitHub on every push for adopters who prefer or require EU-hosted code infrastructure.
 
 **Live demo:** open [ygo.deln0r.com](https://ygo.deln0r.com) in two browser tabs and start typing. Same protocol any standard Yjs ecosystem client speaks, with a pure-Go server behind it.
-
-**EU-sovereign mirror:** the repository is also published at [codeberg.org/Deln0r/ygo](https://codeberg.org/Deln0r/ygo), auto-synced from GitHub on every push (`.github/workflows/mirror-to-codeberg.yml`) for adopters who prefer or require EU-hosted code infrastructure.
 
 ## Quick start
 
@@ -123,7 +131,7 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 
 ## Status
 
-**Alpha. Public API may change before v1.0.** The CRDT engine and wire format are production-stable in the sense that they have been validated bidirectionally against `yjs@13.6.20`; the API surface (function signatures, package layout) may still see small refinements.
+**Approaching v1.0.** The CRDT engine, the V1 and V2 wire formats, and the full type set above are validated bidirectionally against `yjs@13.6.20` and exercised in CI on every push. The public API surface is stabilizing; function signatures and package layout may still see small refinements before the v1.0 tag. GC merging is the one remaining v1.0 feature (see [Roadmap](#roadmap)).
 
 | Layer | Status |
 |---|---|
