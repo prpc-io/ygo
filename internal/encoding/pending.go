@@ -1,12 +1,50 @@
 package encoding
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/Deln0r/ygo/internal/block"
 	"github.com/Deln0r/ygo/internal/doc"
 	"github.com/Deln0r/ygo/internal/store"
 )
+
+// itemFullyKnown reports whether every clock an item covers is already
+// in the store for its client (its clock range lies entirely below the
+// client's next-free clock). Such an item carries no new information.
+func itemFullyKnown(bs *store.BlockStore, it *block.Item) bool {
+	return it.ID.Clock+it.Len <= bs.GetClock(it.ID.Client)
+}
+
+// sliceWireItemRight trims a decoded wire Item to keep only the clocks
+// at or after offset, discarding the [0, offset) prefix the receiver
+// already has. After commit-time squash a peer may emit one item
+// spanning clocks the receiver partly knows; this keeps the unknown
+// right half so it integrates, instead of the whole item being dropped
+// on a first-clock-known check (which loses the new tail and breaks
+// convergence).
+//
+// The content is split (left half discarded), clock and length advance
+// by offset, and Origin is repointed at the last clock of the dropped
+// prefix so Repair re-resolves Left. Caller re-runs Repair before
+// integrating. Mirrors the slice yrs performs in Update::integrate.
+func sliceWireItemRight(it *block.Item, offset uint64) error {
+	if offset == 0 || offset >= it.Len {
+		return fmt.Errorf("encoding: slice offset %d out of range for item len %d", offset, it.Len)
+	}
+	right, err := it.Content.Split(offset)
+	if err != nil {
+		return err
+	}
+	it.Content = right
+	newClock := it.ID.Clock + offset
+	originID := block.ID{Client: it.ID.Client, Clock: newClock - 1}
+	it.Origin = &originID
+	it.ID.Clock = newClock
+	it.Len -= offset
+	it.Left = nil // re-resolved by Repair from the new Origin
+	return nil
+}
 
 // Pending buffers items and delete-set entries that arrived before
 // their causal dependencies (Origin / RightOrigin / Parent-by-ID
@@ -186,7 +224,11 @@ func (p *Pending) foldUpdate(u *Update, bs *store.BlockStore) {
 		for _, b := range list {
 			switch b.Kind {
 			case WireBlockItem:
-				if b.Item != nil && bs.Contains(b.Item.ID) {
+				// Keep unless the item is fully known. A partially
+				// known item (squashed peer block overlapping the
+				// state-vector boundary) is queued and sliced at
+				// Drain time, not dropped on a first-clock check.
+				if b.Item != nil && itemFullyKnown(bs, b.Item) {
 					continue
 				}
 				p.addBlock(client, b)
@@ -251,8 +293,21 @@ func (p *Pending) Drain(txn *doc.TransactionMut) int {
 				if it == nil {
 					continue
 				}
-				if bs.Contains(it.ID) {
-					continue
+				known := bs.GetClock(c)
+				if it.ID.Clock+it.Len <= known {
+					continue // fully known now
+				}
+				if it.ID.Clock < known {
+					// Partial overlap: drop the known prefix and keep
+					// the unknown right half. Origin now points just
+					// below `known`, a clock the store has, so the
+					// left dependency is satisfied.
+					if err := sliceWireItemRight(it, known-it.ID.Clock); err != nil {
+						// Non-splittable content at a partial boundary
+						// should not occur (single-element kinds have
+						// Len 1); drop rather than spin.
+						continue
+					}
 				}
 				if itemMissingDep(bs, it) {
 					remaining = append(remaining, b)

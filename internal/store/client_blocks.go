@@ -92,6 +92,46 @@ func (l *ClientBlockList) Insert(index int, cell BlockCell) {
 	l.list[index] = cell
 }
 
+// SquashFrom merges adjacent same-client item cells at and after
+// startIdx into their left neighbour wherever Item.TrySquash succeeds,
+// dropping the absorbed cell. Returns the number of cells removed.
+// startIdx is clamped to >= 1 (index 0 has no left neighbour).
+//
+// This is the commit-time block-squash primitive: it collapses runs of
+// same-client adjacent-clock items (the classic per-character
+// Text.Insert pattern) into single items, matching yjs's on-commit
+// merging and removing the V1 per-item wire overhead. Clock density is
+// preserved because TrySquash extends the surviving cell to cover the
+// absorbed cell's clocks.
+func (l *ClientBlockList) SquashFrom(startIdx int) int {
+	if startIdx < 1 {
+		startIdx = 1
+	}
+	removed := 0
+	for i := startIdx; i >= 1 && i < len(l.list); {
+		prev := l.list[i-1]
+		cur := l.list[i]
+		if prev.Kind == CellKindItem && cur.Kind == CellKindItem &&
+			prev.Item != nil && cur.Item != nil &&
+			prev.Item.TrySquash(cur.Item) {
+			// cur merged into prev; its Item is now detached from the
+			// list. Any search marker pointing at the absorbed item is
+			// stale, so invalidate the branch's marker cache. This is
+			// cheap and does not regress positional walks: after squash
+			// the branch holds far fewer items, so a marker-less walk is
+			// already O(items).
+			if br := prev.Item.Parent.Branch; br != nil && br.Markers != nil {
+				br.Markers.Invalidate()
+			}
+			l.list = append(l.list[:i], l.list[i+1:]...)
+			removed++
+		} else {
+			i++
+		}
+	}
+	return removed
+}
+
 // CheckInvariants validates structural invariants 1-3 across the list.
 // Returns the first error found, or nil if everything is consistent.
 //

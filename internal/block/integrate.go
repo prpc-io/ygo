@@ -327,6 +327,13 @@ func (i *Item) TrySquash(other *Item) bool {
 	if i.Redone != nil || other.Redone != nil {
 		return false
 	}
+	// Items the UndoManager marked to keep (resurrected via redoItem)
+	// must not merge: undo/redo tracks them by exact identity, and a
+	// merge would let one Undo delete a neighbour. Live, never-undone
+	// items are not kept and squash freely.
+	if i.IsKeep() || other.IsKeep() {
+		return false
+	}
 	if i.IsLinked() || other.IsLinked() {
 		return false
 	}

@@ -204,13 +204,13 @@ See [BENCHMARKS.md](BENCHMARKS.md) for the full table. Highlights from B4 (259,7
 
 - **Apply throughput** — within ~1.85× of native yjs on different hardware (Apple M3 vs Intel i5-8400; the M3 is generally faster so the real ratio is closer than the wall-clock suggests). Native yrs publishes sub-10-s numbers on similar hardware, putting Ygo within roughly 1.0-1.5× of yrs and comfortably under the DESIGN.md "within 2×" target. (ywasm is yrs compiled to WebAssembly and is not representative of native yrs — wasm overhead inflates it ~5×.)
 - **V2 doc size** is competitive with yjs at 1.4× — V2's per-column RLE encoding effectively dedupes per-item overhead at the wire layer.
-- **V1 doc size** carries a known 12× regression vs yjs's V1 because commit-time block squash is deferred (every `Text.Insert` produces a separate Item, none merged with same-client adjacent-clock neighbours). The fix is paired Apply-side partial-overlap handling + commit-time squash; in the [Roadmap](#roadmap) and scoped into the v1.0 grant work. Until then, prefer V2 for persistence/snapshot workloads where size matters.
+- **V1 doc size** is now competitive: commit-time block squash merges same-client adjacent-clock items at commit, so per-character `Text.Insert` runs collapse into single items. A 2,000-character sequential insert encodes to ~1.0 byte/char in V1 (previously ~12× larger when every character was its own Item). Squash ships with the paired Apply-side partial-overlap handling that keeps remote integration correct when a peer sends a merged block overlapping the receiver's state.
 
 A direct head-to-head harness against native yrs under identical hardware is on the roadmap but not yet run; the numbers above are honest absolute figures with hardware caveats.
 
 ## Roadmap
 
-Towards v1.0: GC merging · commit-time block squash · external security audit · documentation site. (Undo manager, Snapshots, Subdocuments: done.)
+Towards v1.0: GC merging · external security audit · documentation site. (Undo manager, Snapshots, Subdocuments, commit-time block squash: done.)
 
 Per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md). Detailed design decisions in [DESIGN.md](DESIGN.md).
 

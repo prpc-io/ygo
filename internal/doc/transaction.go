@@ -140,12 +140,86 @@ func (t *TransactionMut) Commit() {
 	// captured in WriteTxn, this is the data UndoManager needs to
 	// compute per-transaction insertion ranges.
 	t.afterState = t.doc.store.GetStateVector()
-	// TODO: lifecycle steps 1-6 (squash, GC, observers, update emission).
+	// Commit-time block squash: merge same-client adjacent-clock items
+	// created this transaction into their predecessors. Clocks are
+	// preserved, so afterState (captured above) stays valid.
+	t.squashNewBlocks()
+	// TODO: lifecycle steps (GC, update emission).
 	// AfterTransaction handlers fire here, while the write lock is
 	// still held. They observe a finalised TransactionMut state and
 	// must not start a new ReadTxn / WriteTxn on the same doc.
 	t.doc.fireAfterTransactionHandlers(t)
 	t.doc.mu.Unlock()
+}
+
+// squashNewBlocks collapses runs of same-client adjacent-clock items
+// produced during this transaction into single items, the classic
+// per-character Text.Insert pattern. Mirrors the merge-blocks step of
+// yjs's commit lifecycle; removes the V1 per-item overhead that
+// otherwise inflates document size by roughly 12x on fine-grained text
+// workloads. Squash starts at the first new cell so it can also merge
+// into the prior tail.
+func (t *TransactionMut) squashNewBlocks() {
+	for c, after := range t.afterState {
+		before := t.beforeState[c]
+		if after <= before {
+			continue // no new clocks for this client
+		}
+		list := t.doc.store.GetClient(c)
+		if list == nil {
+			continue
+		}
+		startIdx, ok := list.FindPivot(before)
+		if !ok {
+			startIdx = 0
+		}
+		list.SquashFrom(startIdx)
+	}
+}
+
+// DeleteRange tombstones the clock range [start, end) for client,
+// splitting items at the range boundaries so a merged or partially
+// covered item is sliced and only the matching part is tombstoned.
+// Items already deleted are skipped. Clocks the store has not seen are
+// skipped (the range may extend past this replica's state). Returns the
+// number of items newly tombstoned.
+//
+// This is the split-aware delete shared by the wire delete-set path and
+// the UndoManager. After commit-time squash a single item can span
+// several clocks that belong to distinct logical edits; deleting by
+// range with boundary splitting is what keeps undo and remote deletes
+// correct in the presence of merged blocks.
+func (t *TransactionMut) DeleteRange(client, start, end uint64) int {
+	deleted := 0
+	clock := start
+	for clock < end {
+		cell, ok := t.doc.store.GetBlock(block.ID{Client: client, Clock: clock})
+		if !ok {
+			return deleted // unseen tail
+		}
+		if cell.AsItem() == nil {
+			clock = cell.ClockEnd() + 1 // GC cell: already gone
+			continue
+		}
+		item := t.MaterializeCleanStart(block.ID{Client: client, Clock: clock})
+		if item == nil {
+			clock = cell.ClockEnd() + 1
+			continue
+		}
+		if item.ID.Clock+item.Len-1 >= end {
+			_ = t.MaterializeCleanEnd(block.ID{Client: client, Clock: end - 1})
+			item = t.GetItem(block.ID{Client: client, Clock: clock})
+			if item == nil {
+				return deleted
+			}
+		}
+		if !item.IsDeleted() {
+			t.Delete(item)
+			deleted++
+		}
+		clock = item.ID.Clock + item.Len
+	}
+	return deleted
 }
 
 // BeforeState returns the per-client clock-head snapshot taken when

@@ -146,7 +146,8 @@ func (um *UndoManager) onAfterTransaction(mut *doc.TransactionMut) {
 	before := mut.BeforeState()
 	after := mut.AfterState()
 	for client, end := range after {
-		clock := before[client]
+		start := before[client]
+		clock := start
 		for clock < end {
 			it := store.GetItem(block.ID{Client: client, Clock: clock})
 			if it == nil {
@@ -154,7 +155,21 @@ func (um *UndoManager) onAfterTransaction(mut *doc.TransactionMut) {
 				continue
 			}
 			if um.itemInScope(it) {
-				si.Insertions.Insert(client, it.ID.Clock, it.Len)
+				// Record only the portion of this item inside the
+				// new-clocks window [start, end). Commit-time squash
+				// may have merged the new item with older neighbours,
+				// so the item's own range can extend past the window;
+				// recording its full range would make Undo delete
+				// content from earlier transactions.
+				recStart := it.ID.Clock
+				if recStart < start {
+					recStart = start
+				}
+				recEnd := it.ID.Clock + it.Len
+				if recEnd > end {
+					recEnd = end
+				}
+				si.Insertions.Insert(client, recStart, recEnd-recStart)
 			}
 			clock = it.ID.Clock + it.Len
 		}
@@ -327,10 +342,14 @@ func (um *UndoManager) applyStackItem(si *StackItem) {
 	defer txn.Commit()
 
 	// Delete everything that was inserted during the captured window.
-	// An inserted item may have been resurrected by an earlier Undo /
-	// Redo (its Redone chain points at a newer live item); follow that
-	// chain so we delete the current representative, not a stale
-	// tombstone.
+	// Two cases per item:
+	//   - resurrected by an earlier Undo/Redo (Redone chain set): the
+	//     live representative is a kept, never-squashed item; follow the
+	//     chain and delete it whole.
+	//   - live, never-undone: commit-time squash may have merged it with
+	//     neighbours, so delete only this range's slice via the
+	//     split-aware DeleteRange (deleting the whole merged item would
+	//     remove adjacent edits that belong to other undo steps).
 	si.Insertions.Iterate(func(client uint64, ranges []encoding.Range) {
 		for _, r := range ranges {
 			clock := r.Start
@@ -340,12 +359,21 @@ func (um *UndoManager) applyStackItem(si *StackItem) {
 					clock++
 					continue
 				}
-				advance := it.ID.Clock + it.Len
-				live := followRedone(txn, it)
-				if live != nil && !live.IsDeleted() {
-					txn.Delete(live)
+				if it.Redone != nil {
+					advance := it.ID.Clock + it.Len
+					live := followRedone(txn, it)
+					if live != nil && !live.IsDeleted() {
+						txn.Delete(live)
+					}
+					clock = advance
+					continue
 				}
-				clock = advance
+				end := r.End()
+				if itEnd := it.ID.Clock + it.Len; itEnd < end {
+					end = itEnd
+				}
+				txn.DeleteRange(client, clock, end)
+				clock = end
 			}
 		}
 	})
