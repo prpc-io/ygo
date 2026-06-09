@@ -19,6 +19,8 @@ package ygo
 // wrapping or copying.
 
 import (
+	"errors"
+
 	"github.com/Deln0r/ygo/internal/awareness"
 	"github.com/Deln0r/ygo/internal/block"
 	"github.com/Deln0r/ygo/internal/doc"
@@ -250,6 +252,38 @@ func DecodeSnapshot(buf []byte) (Snapshot, error) { return encoding.DecodeSnapsh
 
 // EqualSnapshots reports whether two snapshots are identical.
 func EqualSnapshots(a, b Snapshot) bool { return encoding.EqualSnapshots(a, b) }
+
+// RestoreSnapshot reconstructs the document state that d had at the
+// moment snap was taken, returning it as a new Doc. Byte-equivalent to
+// yjs `Y.createDocFromSnapshot`.
+//
+// d must have been created with GC disabled (ygo.NewDocWithOptions with
+// DisableGC: true); otherwise deleted content the snapshot references
+// may have been collected and RestoreSnapshot returns ErrSnapshotGC.
+// The returned Doc also has GC disabled so it can itself be snapshotted.
+//
+// The source Doc is not logically changed (the reconstruction may split
+// blocks internally, which is transparent to readers).
+func RestoreSnapshot(d *Doc, snap Snapshot) (*Doc, error) {
+	if d.GC() {
+		return nil, ErrSnapshotGC
+	}
+	txn := d.WriteTxn()
+	encoding.SplitAtSnapshotBoundaries(txn.Store(), snap)
+	update := encoding.EncodeSnapshotAsUpdateV1(txn.Store(), snap)
+	txn.Commit()
+
+	nd := NewDocWithOptions(Options{DisableGC: true})
+	if err := ApplyUpdate(nd, update); err != nil {
+		return nil, err
+	}
+	return nd, nil
+}
+
+// ErrSnapshotGC is returned by RestoreSnapshot when the source Doc has
+// garbage collection enabled, which can discard content a snapshot
+// needs to reconstruct.
+var ErrSnapshotGC = errors.New("ygo: RestoreSnapshot requires the source Doc to have GC disabled (NewDocWithOptions with DisableGC: true)")
 
 // EncodeDiff returns the wire-encoded V1 update covering the
 // blocks d has that the remote (per remoteSVBytes) does not. A

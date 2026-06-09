@@ -78,6 +78,31 @@ um.Redo() // "theme" == "dark" again
 
 Only local edits under the watched types are captured; remote updates applied via `ApplyUpdate` are not. Rapid edits inside the capture-timeout window collapse into one undo step; call `um.StopCapturing()` to force a boundary. The semantics match `yjs@13.6.20`'s `UndoManager`, checked by cross-language conformance fixtures.
 
+### Snapshots / time-travel
+
+Capture a point in a document's history and reconstruct it later. The source doc must have GC disabled so deleted content is retained:
+
+```go
+d := ygo.NewDocWithOptions(ygo.Options{DisableGC: true})
+txt := ygo.NewText(d, "t")
+
+txn := d.WriteTxn()
+txt.Insert(txn, 0, "world!")
+txn.Commit()
+
+snap := ygo.CreateSnapshot(d)         // mark this moment
+saved := ygo.EncodeSnapshot(snap)     // persist it (byte-compatible with Y.encodeSnapshot)
+
+txn = d.WriteTxn()
+txt.Insert(txn, 0, "hello ")          // doc moves on
+txn.Commit()
+
+restored, _ := ygo.RestoreSnapshot(d, snap) // reconstruct the marked state
+ygo.NewText(restored, "t").String()         // "world!"
+```
+
+The snapshot wire format (`EncodeSnapshot` / `DecodeSnapshot`) is byte-compatible with `yjs@13.6.20`'s `Y.encodeSnapshot`, verified by cross-language fixtures including multi-client delete-set ordering. `RestoreSnapshot` mirrors `Y.createDocFromSnapshot`.
+
 ## Status
 
 **Alpha. Public API may change before v1.0.** The CRDT engine and wire format are production-stable in the sense that they have been validated bidirectionally against `yjs@13.6.20`; the API surface (function signatures, package layout) may still see small refinements.
@@ -104,7 +129,8 @@ Only local edits under the watched types are captured; remote updates applied vi
 | V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.{EncodeV2,DecodeV2}` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; bidirectional cross-language fixtures vs `yjs@13.6.20` |
 | dmonad/crdt-benchmarks B1-B4 port | done; B1.1-B1.11 / B2.1-B2.4 / B3.1+3+4 / B4 (260k-edit real-world LaTeX trace). Baseline in [BENCHMARKS.md](BENCHMARKS.md). |
 | `UndoManager` (`internal/undo`) | done; scoped Undo / Redo over Map / Array / Text with capture-timeout grouping, tracked-origin filtering, and a `Redone` chain for deletion restore. Cross-language conformance vs `yjs@13.6.20` (7 scenarios) |
-| Snapshots / Subdocs / Y.Array.move / GC merging / commit-time block squash | planned for v1.0; see [Roadmap](#roadmap) |
+| Snapshots (`CreateSnapshot` / `EncodeSnapshot` / `RestoreSnapshot`) | done; V1 wire format byte-compatible with `yjs@13.6.20` (cross-language fixtures incl. multi-client), `RestoreSnapshot` mirrors `Y.createDocFromSnapshot` |
+| Subdocs / GC merging / commit-time block squash | planned for v1.0; see [Roadmap](#roadmap) |
 
 ## Goals
 
@@ -164,7 +190,7 @@ A direct head-to-head harness against native yrs under identical hardware is on 
 
 ## Roadmap
 
-Towards v1.0: Snapshots · Subdocs · GC merging · Y.Array.move · commit-time block squash · external security audit · documentation site. (Undo manager: done.)
+Towards v1.0: Subdocs · GC merging · commit-time block squash · external security audit · documentation site. (Undo manager and Snapshots: done.)
 
 Per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md). Detailed design decisions in [DESIGN.md](DESIGN.md).
 
