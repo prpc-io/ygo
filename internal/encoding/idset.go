@@ -129,20 +129,31 @@ func (s *IdSet) ClientCount() int { return len(s.clients) }
 //	    rangeCount × (varuint start, varuint length)
 //	)
 //
-// Clients are emitted in ascending order (matches yrs BTreeMap
-// iteration). Ranges within a client are already sorted by Insert.
-//
-// Mirrors yrs IdSet::encode (id_set.rs:323 area).
+// Clients are emitted in DESCENDING order, matching the V1 delete-set
+// wire form yjs produces (writeDeleteSet sorts "(a, b) => b[0] -
+// a[0]"). Ranges within a client are already sorted by Insert. Note
+// this differs from Iterate, which is ascending for general-purpose
+// deterministic traversal; the wire form specifically tracks yjs, our
+// byte-compatibility reference, not yrs (whose BTreeMap emits
+// ascending). Single-client sets encode identically either way, which
+// is why the difference stayed latent until multi-client snapshots.
 func (s *IdSet) Encode(buf []byte) []byte {
-	buf = lib0.WriteVarUint(buf, uint64(len(s.clients)))
-	s.Iterate(func(client uint64, ranges []Range) {
-		buf = lib0.WriteVarUint(buf, client)
+	clients := make([]uint64, 0, len(s.clients))
+	for c := range s.clients {
+		clients = append(clients, c)
+	}
+	sort.Slice(clients, func(i, j int) bool { return clients[i] > clients[j] })
+
+	buf = lib0.WriteVarUint(buf, uint64(len(clients)))
+	for _, c := range clients {
+		ranges := s.clients[c]
+		buf = lib0.WriteVarUint(buf, c)
 		buf = lib0.WriteVarUint(buf, uint64(len(ranges)))
 		for _, r := range ranges {
 			buf = lib0.WriteVarUint(buf, r.Start)
 			buf = lib0.WriteVarUint(buf, r.Length)
 		}
-	})
+	}
 	return buf
 }
 

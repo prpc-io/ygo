@@ -90,6 +90,9 @@ jobs:
       - name: regenerate subdoc fixtures
         working-directory: testdata/gen
         run: node gen-subdoc.mjs
+      - name: regenerate wire-edge fixtures
+        working-directory: testdata/gen
+        run: node gen-wire-edge.mjs
       - name: regenerate reverse (Go encodes → JS decodes) fixtures
         run: go run ./cmd/gen-go-fixtures
       - name: verify no diff
@@ -104,6 +107,7 @@ jobs:
           go test ./internal/undo/... -run TestUndoFixtures
           go test ./internal/encoding/... -run TestSnapshotFixtures
           go test . -run TestSubdoc_CrossLanguage
+          go test . -run TestWireEdge_CrossLanguage
       - name: validate reverse fixtures (JS applies Go-encoded bytes)
         working-directory: testdata/gen
         run: node validate-go-fixtures.mjs

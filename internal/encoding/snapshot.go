@@ -67,7 +67,7 @@ func EqualSnapshots(a, b Snapshot) bool {
 // `encodeSnapshot` (DSEncoderV1).
 func EncodeSnapshot(s Snapshot) []byte {
 	var buf []byte
-	buf = encodeDeleteSetV1(s.DS, buf)
+	buf = s.DS.Encode(buf) // V1 delete set, descending client order
 	buf = EncodeStateVector(s.SV, buf)
 	return buf
 }
@@ -154,35 +154,6 @@ func EncodeSnapshotAsUpdateV1(bs *store.BlockStore, snap Snapshot) []byte {
 			buf = encodeCell(buf, cell)
 		}
 	}
-	buf = encodeDeleteSetV1(snap.DS, buf)
-	return buf
-}
-
-// encodeDeleteSetV1 writes the V1 delete-set wire form with clients in
-// DESCENDING order, matching yjs writeDeleteSet ("sort((a,b) => b[0] -
-// a[0])") and ygo's own writeDeleteSetV2. The general-purpose
-// IdSet.Encode currently emits ascending order, which is only safe for
-// single-client sets; snapshots can be multi-client, so we sort
-// correctly here. See FEATURE_RACE housekeeping note about unifying
-// the V1 delete-set writers.
-func encodeDeleteSetV1(ds *IdSet, buf []byte) []byte {
-	clients := make([]uint64, 0, len(ds.clients))
-	for c, ranges := range ds.clients {
-		if len(ranges) > 0 {
-			clients = append(clients, c)
-		}
-	}
-	sort.Slice(clients, func(i, j int) bool { return clients[i] > clients[j] })
-
-	buf = lib0.WriteVarUint(buf, uint64(len(clients)))
-	for _, c := range clients {
-		ranges := ds.clients[c]
-		buf = lib0.WriteVarUint(buf, c)
-		buf = lib0.WriteVarUint(buf, uint64(len(ranges)))
-		for _, r := range ranges {
-			buf = lib0.WriteVarUint(buf, r.Start)
-			buf = lib0.WriteVarUint(buf, r.Length)
-		}
-	}
+	buf = snap.DS.Encode(buf) // V1 delete set, descending client order
 	return buf
 }

@@ -1,0 +1,36 @@
+{
+  "generator": "yjs@13.6.20 (wire edge V1)",
+  "scenarios": [
+    {
+      "description": "multi-client array with deletes",
+      "root_name": "a",
+      "root_kind": "array",
+      "update_hex": "0202c801008105020188c80100017701450305000801016101770141810500018805010177014302c80101000105010101",
+      "expected": [
+        "A",
+        "C",
+        "E"
+      ]
+    },
+    {
+      "description": "wide client id (> 2^32)",
+      "root_name": "m",
+      "root_kind": "map",
+      "update_hex": "0102b9e680808020002801016d016b017701762801016d016e017d0700",
+      "expected_map": {
+        "k": "v",
+        "n": 7
+      }
+    },
+    {
+      "description": "two wide client ids merged",
+      "root_name": "a",
+      "root_kind": "array",
+      "update_hex": "020180b4c4c321008880e497d01200017701790180e497d01200080101610177017800",
+      "expected": [
+        "x",
+        "y"
+      ]
+    }
+  ]
+}

@@ -149,6 +149,7 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 | `UndoManager` (`internal/undo`) | done; scoped Undo / Redo over Map / Array / Text with capture-timeout grouping, tracked-origin filtering, and a `Redone` chain for deletion restore. Cross-language conformance vs `yjs@13.6.20` (7 scenarios) |
 | Snapshots (`CreateSnapshot` / `EncodeSnapshot` / `RestoreSnapshot`) | done; V1 wire format byte-compatible with `yjs@13.6.20` (cross-language fixtures incl. multi-client), `RestoreSnapshot` mirrors `Y.createDocFromSnapshot` |
 | Subdocuments (`Map.SetDoc` / `Map.GetDoc`) | done; `ContentDoc` wire format (GUID + options) byte-compatible with `yjs@13.6.20`, cross-language fixtures. Lifecycle events (load / autoLoad) pending |
+| Wire client-ID width | 53-bit client IDs throughout (`uint64` + varint), byte-verified against `yjs@13.6.20` for IDs above 2^32. Forward-compatible with the wider client-ID space yjs@14 introduces |
 | GC merging / commit-time block squash | planned for v1.0; see [Roadmap](#roadmap) |
 
 ## Goals
