@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Deln0r/ygo/actions/workflows/test.yml/badge.svg)](https://github.com/Deln0r/ygo/actions/workflows/test.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Deln0r/ygo.svg)](https://pkg.go.dev/github.com/Deln0r/ygo)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Deln0r/ygo?cache=v0.9.0)](https://goreportcard.com/report/github.com/Deln0r/ygo)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Deln0r/ygo?cache=v1.0.0)](https://goreportcard.com/report/github.com/Deln0r/ygo)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.22%2B-00ADD8.svg)](go.mod)
 [![Yjs Protocol](https://img.shields.io/badge/Yjs%20protocol-V1%20%2B%20V2-7c3aed.svg)](https://github.com/yjs/yjs)
@@ -18,7 +18,7 @@ Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients 
 - **Byte-for-byte wire compatibility, verified in both directions.** 124 cross-language fixtures (generated from `yjs@13.6.31`) cover the V1 and V2 update formats, snapshots, subdocuments, awareness, and the sync protocol, JS to Go and Go to JS. The suite runs in CI on every push, so a regression in either direction fails the build.
 - **Pure Go, no CGO.** Builds for any Go target, compiles to WASM, and cross-compiles freely. `gomobile bind` produces a verified iOS xcframework and Android AAR. No V8, no embedded JavaScript engine, no Rust FFI bridge.
 - **Complete CRDT type set.** Map, Array, Text (rich-text formatting, Quill deltas, embeds), XML types, Awareness, UndoManager, Snapshots / time-travel, and Subdocuments.
-- **Compact V1 encoding.** Commit-time block squash collapses per-character edits into single items (about 1 byte per character in V1), so document size stays competitive instead of carrying per-item overhead.
+- **Compact encoding.** Commit-time block squash collapses per-character edits into single items (about 1 byte per character in V1), and garbage collection frees deleted content at commit. On a real-world editing trace V1 document size drops from ~1.97 MB to ~223 KB, competitive with V2.
 - **Forward-looking wire handling.** 53-bit client IDs throughout, byte-verified above 2^32, ready for the wider client-ID space `yjs@14` introduces.
 - **Ready-to-run server.** A Hocuspocus-compatible WebSocket server with optional sqlite persistence ships in `cmd/ygo-server`.
 - **EU-sovereign mirror** on [codeberg.org/Deln0r/ygo](https://codeberg.org/Deln0r/ygo), auto-synced from GitHub on every push for adopters who prefer or require EU-hosted code infrastructure.
@@ -131,7 +131,7 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 
 ## Status
 
-**Approaching v1.0, feature-complete.** The CRDT engine, the V1 and V2 wire formats, and the full type set above are validated bidirectionally against `yjs@13.6.31` and exercised in CI on every push. The public API surface is stabilizing; function signatures and package layout may still see small refinements before the v1.0 tag. The remaining work to v1.0 is polish (benchmarks refresh, documentation, dependency re-anchor), not new features.
+**Feature-complete and stable.** The CRDT engine, the V1 and V2 wire formats, and the full type set above are validated bidirectionally against `yjs@13.6.31` and exercised in CI on every push. The public API is considered stable for the v1.x line; changes follow semantic versioning, with new functionality as minor releases and breaking changes deferred to a future major.
 
 | Layer | Status |
 |---|---|
