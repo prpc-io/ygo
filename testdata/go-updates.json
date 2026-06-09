@@ -38,7 +38,7 @@
       "go_client_id": 104,
       "root_kind": "map",
       "root_name": "x",
-      "update_hex": "0103680028010178016b0177056669727374a868000177067365636f6e64a8680101770574686972640168010002",
+      "update_hex": "0102680028010178016b027705666972737477067365636f6e64a8680101770574686972640168010002",
       "expected_map": {
         "k": "third"
       }
@@ -157,7 +157,7 @@
       "go_client_id": 302,
       "root_kind": "text",
       "root_name": "x",
-      "update_hex": "0102ae0200040101780568656c6c6f84ae02040620776f726c6400",
+      "update_hex": "0101ae0200040101780b68656c6c6f20776f726c6400",
       "expected_text": "hello world",
       "expected_length": 11
     },
