@@ -19,7 +19,7 @@ Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients 
 - **Pure Go, no CGO.** Builds for any Go target, compiles to WASM, and cross-compiles freely. `gomobile bind` produces a verified iOS xcframework and Android AAR. No V8, no embedded JavaScript engine, no Rust FFI bridge.
 - **Complete CRDT type set.** Map, Array, Text (rich-text formatting, Quill deltas, embeds), XML types, Awareness, UndoManager, Snapshots / time-travel, and Subdocuments.
 - **Compact encoding.** Commit-time block squash collapses per-character edits into single items (about 1 byte per character in V1), and garbage collection frees deleted content at commit. On a real-world editing trace V1 document size drops from ~1.97 MB to ~223 KB, competitive with V2.
-- **Forward-looking wire handling.** 53-bit client IDs throughout, byte-verified above 2^32, ready for the wider client-ID space `yjs@14` introduces.
+- **Forward-looking wire handling.** ygo already handles both confirmed wire-level changes in the `yjs@14` release candidate: 53-bit client IDs throughout (byte-verified above 2^32) and Skip structs in the update stream (decoded as no-op gaps). Full attribution / IdMap support waits for the v14 format to stabilize.
 - **Ready-to-run server.** A Hocuspocus-compatible WebSocket server with optional sqlite persistence ships in `cmd/ygo-server`.
 - **EU-sovereign mirror** on [codeberg.org/Deln0r/ygo](https://codeberg.org/Deln0r/ygo), auto-synced from GitHub on every push for adopters who prefer or require EU-hosted code infrastructure.
 
