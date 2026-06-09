@@ -144,12 +144,64 @@ func (t *TransactionMut) Commit() {
 	// created this transaction into their predecessors. Clocks are
 	// preserved, so afterState (captured above) stays valid.
 	t.squashNewBlocks()
-	// TODO: lifecycle steps (GC, update emission).
 	// AfterTransaction handlers fire here, while the write lock is
 	// still held. They observe a finalised TransactionMut state and
-	// must not start a new ReadTxn / WriteTxn on the same doc.
+	// must not start a new ReadTxn / WriteTxn on the same doc. The
+	// UndoManager runs here and marks tombstoned items it tracks with
+	// keep, which the GC pass below must see, so observers run BEFORE
+	// gcDeleted.
 	t.doc.fireAfterTransactionHandlers(t)
+	// Garbage-collect deleted content (free payloads, merge deleted
+	// runs), skipping items marked keep by an observer.
+	t.gcDeleted()
 	t.doc.mu.Unlock()
+}
+
+// gcDeleted frees the content of items tombstoned during this
+// transaction and merges adjacent deleted runs, matching yjs's
+// commit-time GC (tryGcDeleteSet + tryMergeDeleteSet). A deleted item's
+// payload is replaced with a ContentDeleted marker of the same length,
+// so the wire form becomes ContentDeleted (ref 1), byte-aligned with
+// what yjs emits for a deleted item. Skipped when GC is disabled
+// (snapshots / time-travel need the content) and for items marked keep
+// (the UndoManager preserves them to support redo).
+func (t *TransactionMut) gcDeleted() {
+	if !t.doc.gc {
+		return
+	}
+	bs := t.doc.store
+	touched := map[uint64]uint64{} // client -> smallest GC'd clock
+	for _, id := range t.deletedIDs {
+		cell, ok := bs.GetBlock(id)
+		if !ok {
+			continue
+		}
+		it := cell.AsItem()
+		if it == nil || !it.IsDeleted() || it.IsKeep() {
+			continue
+		}
+		if it.Content.Kind != block.KindDeleted {
+			it.Content = block.Content{Kind: block.KindDeleted, DeletedLen: it.Len}
+		}
+		if cur, ok := touched[it.ID.Client]; !ok || it.ID.Clock < cur {
+			touched[it.ID.Client] = it.ID.Clock
+		}
+	}
+	// Merge adjacent deleted/GC'd cells per affected client, starting at
+	// the first GC'd clock so the run collapses (and can also absorb a
+	// deleted left neighbour). TrySquash already refuses to merge kept
+	// items, so tracked tombstones stay distinct.
+	for c, minClock := range touched {
+		list := bs.GetClient(c)
+		if list == nil {
+			continue
+		}
+		startIdx, ok := list.FindPivot(minClock)
+		if !ok {
+			startIdx = 1
+		}
+		list.SquashFrom(startIdx)
+	}
 }
 
 // squashNewBlocks collapses runs of same-client adjacent-clock items

@@ -131,7 +131,7 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 
 ## Status
 
-**Approaching v1.0.** The CRDT engine, the V1 and V2 wire formats, and the full type set above are validated bidirectionally against `yjs@13.6.20` and exercised in CI on every push. The public API surface is stabilizing; function signatures and package layout may still see small refinements before the v1.0 tag. GC merging is the one remaining v1.0 feature (see [Roadmap](#roadmap)).
+**Approaching v1.0, feature-complete.** The CRDT engine, the V1 and V2 wire formats, and the full type set above are validated bidirectionally against `yjs@13.6.20` and exercised in CI on every push. The public API surface is stabilizing; function signatures and package layout may still see small refinements before the v1.0 tag. The remaining work to v1.0 is polish (benchmarks refresh, documentation, dependency re-anchor), not new features.
 
 | Layer | Status |
 |---|---|
@@ -158,7 +158,8 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 | Snapshots (`CreateSnapshot` / `EncodeSnapshot` / `RestoreSnapshot`) | done; V1 wire format byte-compatible with `yjs@13.6.20` (cross-language fixtures incl. multi-client), `RestoreSnapshot` mirrors `Y.createDocFromSnapshot` |
 | Subdocuments (`Map.SetDoc` / `Map.GetDoc`) | done; `ContentDoc` wire format (GUID + options) byte-compatible with `yjs@13.6.20`, cross-language fixtures. Lifecycle events (load / autoLoad) pending |
 | Wire client-ID width | 53-bit client IDs throughout (`uint64` + varint), byte-verified against `yjs@13.6.20` for IDs above 2^32. Forward-compatible with the wider client-ID space yjs@14 introduces |
-| GC merging / commit-time block squash | planned for v1.0; see [Roadmap](#roadmap) |
+| Commit-time block squash | done; merges same-client adjacent-clock items at commit (~1 byte/char V1), paired with Apply-side partial-overlap slicing for correct remote integration of merged blocks |
+| GC merging | done; deleted content is freed at commit (ContentDeleted, byte-aligned with yjs) and adjacent deleted runs are merged. Skipped when GC is disabled or for items an UndoManager keeps |
 
 ## Goals
 
@@ -218,7 +219,7 @@ A direct head-to-head harness against native yrs under identical hardware is on 
 
 ## Roadmap
 
-Towards v1.0: GC merging · external security audit · documentation site. (Undo manager, Snapshots, Subdocuments, commit-time block squash: done.)
+Towards v1.0: benchmarks refresh · documentation site · external security audit. (Undo manager, Snapshots, Subdocuments, commit-time block squash, GC merging: done.)
 
 Per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md). Detailed design decisions in [DESIGN.md](DESIGN.md).
 

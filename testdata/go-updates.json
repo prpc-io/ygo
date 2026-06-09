@@ -38,7 +38,7 @@
       "go_client_id": 104,
       "root_kind": "map",
       "root_name": "x",
-      "update_hex": "0102680028010178016b027705666972737477067365636f6e64a8680101770574686972640168010002",
+      "update_hex": "0102680021010178016b02a8680101770574686972640168010002",
       "expected_map": {
         "k": "third"
       }
@@ -48,7 +48,7 @@
       "go_client_id": 105,
       "root_kind": "map",
       "root_name": "x",
-      "update_hex": "01026900280101780161017705616c706861280101780162017704626574610169010001",
+      "update_hex": "0102690021010178016101280101780162017704626574610169010001",
       "expected_map": {
         "b": "beta"
       }
@@ -129,7 +129,7 @@
       "go_client_id": 206,
       "root_kind": "array",
       "root_name": "x",
-      "update_hex": "0103ce0100080101780277016177016288ce01010377016377016477016588ce01040177016601ce01010203",
+      "update_hex": "0103ce0100080101780277016177016281ce01010388ce01040177016601ce01010203",
       "expected_array": [
         "a",
         "b",
@@ -184,7 +184,7 @@
       "go_client_id": 305,
       "root_kind": "text",
       "root_name": "x",
-      "update_hex": "0102b10200040101780568656c6c6f84b102040620776f726c6401b102010506",
+      "update_hex": "0102b10200040101780568656c6c6f81b102040601b102010506",
       "expected_text": "hello",
       "expected_length": 5
     },
@@ -245,7 +245,7 @@
       "go_client_id": 209,
       "root_kind": "array",
       "root_name": "x",
-      "update_hex": "0101d10100080101780377016177016277016301d101010003"
+      "update_hex": "0101d10100010101780301d101010003"
     },
     {
       "description": "Text non-BMP combining + ZWJ family",

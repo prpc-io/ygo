@@ -185,6 +185,11 @@ func (um *UndoManager) onAfterTransaction(mut *doc.TransactionMut) {
 		}
 		if um.itemInScope(it) {
 			si.Deletions.Insert(it.ID.Client, it.ID.Clock, it.Len)
+			// Mark the tombstoned item to keep so commit-time GC does
+			// not free the content this manager needs to resurrect it
+			// on undo (redoItem copies the original content). Runs
+			// before gcDeleted, which skips kept items.
+			it.SetKeep(true)
 		}
 	}
 
