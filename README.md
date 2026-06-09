@@ -11,7 +11,7 @@
 
 Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collaborative applications.
 
-Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients running `yjs@13.x` synchronize directly with Go servers and vice versa, with both directions verified through **124 cross-language fixture scenarios** generated from `yjs@13.6.31`. The same fixture suite doubles as a [cross-implementation conformance check](docs/reearth-cross-test/) for other pure-Go Yjs ports. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
+Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients running `yjs@13.x` synchronize directly with Go servers and vice versa, with both directions verified through **124 cross-language fixture scenarios** generated from `yjs@13.6.31`. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
 
 ## Highlights
 
