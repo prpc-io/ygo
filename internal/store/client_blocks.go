@@ -111,9 +111,10 @@ func (l *ClientBlockList) SquashFrom(startIdx int) int {
 	for i := startIdx; i >= 1 && i < len(l.list); {
 		prev := l.list[i-1]
 		cur := l.list[i]
-		if prev.Kind == CellKindItem && cur.Kind == CellKindItem &&
+		switch {
+		case prev.Kind == CellKindItem && cur.Kind == CellKindItem &&
 			prev.Item != nil && cur.Item != nil &&
-			prev.Item.TrySquash(cur.Item) {
+			prev.Item.TrySquash(cur.Item):
 			// cur merged into prev; its Item is now detached from the
 			// list. Any search marker pointing at the absorbed item is
 			// stale, so invalidate the branch's marker cache. This is
@@ -125,11 +126,38 @@ func (l *ClientBlockList) SquashFrom(startIdx int) int {
 			}
 			l.list = append(l.list[:i], l.list[i+1:]...)
 			removed++
-		} else {
+		case prev.Kind == CellKindGC && cur.Kind == CellKindGC:
+			// Collapse two adjacent garbage-collected runs into one,
+			// matching yjs's merge of contiguous GC structs. This is the
+			// run that forms when a deleted shared type's children are
+			// each replaced with a GC cell (see ReplaceWithGC).
+			l.list[i-1] = CellOfGC(prev.GC.Start, cur.GC.End)
+			l.list = append(l.list[:i], l.list[i+1:]...)
+			removed++
+		default:
 			i++
 		}
 	}
 	return removed
+}
+
+// ReplaceWithGC converts the cell at index i into a GC cell covering the
+// same clock range, discarding the live Item. No-op if i is out of range
+// or the cell is already a GC cell.
+//
+// Used by nested-type collection: when a shared type is deleted, each of
+// its children collapses to a garbage-collected range (yjs's parentGCd
+// path in ContentType.gc), encoded as a ref-0 GC struct. Adjacent GC
+// cells produced this way merge into a single run via SquashFrom.
+func (l *ClientBlockList) ReplaceWithGC(i int) {
+	if i < 0 || i >= len(l.list) {
+		return
+	}
+	c := l.list[i]
+	if c.Kind == CellKindGC {
+		return
+	}
+	l.list[i] = CellOfGC(c.ClockStart(), c.ClockEnd())
 }
 
 // CheckInvariants validates structural invariants 1-3 across the list.

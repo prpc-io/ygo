@@ -1,0 +1,25 @@
+{
+  "generator": "yjs@13.6.31 (nested-type GC, V1)",
+  "scenarios": [
+    {
+      "name": "map_in_map",
+      "client_id": 21,
+      "update_hex": "01021500210104726f6f74056368696c640100030115010004"
+    },
+    {
+      "name": "array_in_map",
+      "client_id": 22,
+      "update_hex": "01021600210104726f6f74046c6973740100030116010004"
+    },
+    {
+      "name": "map_in_map_2level",
+      "client_id": 23,
+      "update_hex": "01021700210104726f6f74056f757465720100040117010005"
+    },
+    {
+      "name": "map_in_array",
+      "client_id": 24,
+      "update_hex": "010218000101036172720100020118010003"
+    }
+  ]
+}

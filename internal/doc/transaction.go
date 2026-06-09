@@ -278,6 +278,14 @@ func (t *TransactionMut) gcDeleted() {
 		if it == nil || !it.IsDeleted() || it.IsKeep() {
 			continue
 		}
+		// A deleted shared type collapses its whole subtree: every child
+		// becomes a garbage-collected range (yjs ContentType.gc under
+		// parentGCd), while the reference item itself becomes a
+		// ContentDeleted marker below. Collect the children before the
+		// content swap destroys the branch pointer.
+		if it.Content.Kind == block.KindType && it.Content.Branch != nil {
+			t.gcNestedChildren(it.Content.Branch, touched)
+		}
 		if it.Content.Kind != block.KindDeleted {
 			it.Content = block.Content{Kind: block.KindDeleted, DeletedLen: it.Len}
 			// ContentDeleted is not countable; clear the flag so the
@@ -303,6 +311,45 @@ func (t *TransactionMut) gcDeleted() {
 			startIdx = 1
 		}
 		list.SquashFrom(startIdx)
+	}
+}
+
+// gcNestedChildren recursively replaces the children of a deleted shared
+// type with GC cells, mirroring yjs ContentType.gc: every child collapses
+// to a garbage-collected range (ref-0 GC struct on the wire), and nested
+// types recurse depth-first. Children are reached two ways, matching the
+// store's layout: positional items via Branch.Start (walk Right), and
+// keyed items via Branch.Map's winner plus its overwritten left-chain
+// (walk Left). touched records the smallest affected clock per client so
+// the caller's merge pass collapses the adjacent GC cells into one run.
+func (t *TransactionMut) gcNestedChildren(br *block.Branch, touched map[uint64]uint64) {
+	bs := t.doc.store
+	gcItem := func(it *block.Item) {
+		// Depth-first: collapse this child's own subtree first, so a
+		// nested-in-nested type is fully collected.
+		if it.Content.Kind == block.KindType && it.Content.Branch != nil {
+			t.gcNestedChildren(it.Content.Branch, touched)
+		}
+		list := bs.GetClient(it.ID.Client)
+		if list == nil {
+			return
+		}
+		idx, ok := list.FindPivot(it.ID.Clock)
+		if !ok {
+			return
+		}
+		list.ReplaceWithGC(idx)
+		if cur, ok := touched[it.ID.Client]; !ok || it.ID.Clock < cur {
+			touched[it.ID.Client] = it.ID.Clock
+		}
+	}
+	for it := br.Start; it != nil; it = it.Right {
+		gcItem(it)
+	}
+	for _, winner := range br.Map {
+		for it := winner; it != nil; it = it.Left {
+			gcItem(it)
+		}
 	}
 }
 
