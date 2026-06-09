@@ -187,6 +187,18 @@ func (t *TransactionMut) trackSubdocs() {
 			}
 			if it.Content.Kind == block.KindDoc {
 				guid := it.Content.DocGuid
+				// A ContentDoc added and tombstoned in the SAME transaction
+				// is a net no-op: yjs's ContentDoc.delete removes the doc
+				// from subdocsAdded (and never reaches subdocsRemoved) when
+				// it was added this txn. Surface it in neither Added nor
+				// Loaded, and drop the handle SetDoc eagerly registered so
+				// the registry does not retain a cancelled subdoc; the
+				// removed-scan below skips it symmetrically.
+				if it.IsDeleted() {
+					t.doc.RemoveSubdoc(guid)
+					clock = it.ID.Clock + it.Len
+					continue
+				}
 				t.subdocsAdded = append(t.subdocsAdded, guid)
 				sub := t.doc.Subdoc(guid) // create + register the handle
 				if optBool(it.Content.DocOpts, "autoLoad") {
@@ -201,9 +213,24 @@ func (t *TransactionMut) trackSubdocs() {
 	}
 	for _, id := range t.deletedIDs {
 		it := bs.GetItem(id)
-		if it != nil && it.Content.Kind == block.KindDoc {
-			t.subdocsRemoved = append(t.subdocsRemoved, it.Content.DocGuid)
+		if it == nil || it.Content.Kind != block.KindDoc {
+			continue
 		}
+		// Mirror yjs ContentDoc.delete: only report Removed when the
+		// subdoc was NOT added this same transaction. A subdoc created in
+		// a prior transaction has clock < beforeState[client] and so is
+		// correctly still reported; one created this txn falls in
+		// [beforeState, afterState) and cancels out (already excluded from
+		// Added above).
+		before := t.beforeState[id.Client]
+		after := t.afterState[id.Client]
+		if id.Clock >= before && id.Clock < after {
+			continue // added and removed this txn: net no-op
+		}
+		t.subdocsRemoved = append(t.subdocsRemoved, it.Content.DocGuid)
+		// Drop the cached handle so Subdocs / Subdoc / GetDoc stop
+		// returning a stale instance for a now-tombstoned reference.
+		t.doc.RemoveSubdoc(it.Content.DocGuid)
 	}
 }
 
@@ -253,6 +280,10 @@ func (t *TransactionMut) gcDeleted() {
 		}
 		if it.Content.Kind != block.KindDeleted {
 			it.Content = block.Content{Kind: block.KindDeleted, DeletedLen: it.Len}
+			// ContentDeleted is not countable; clear the flag so the
+			// item honours the invariant at block/item.go (a deleted
+			// marker never contributes to parent length totals).
+			it.SetCountable(false)
 		}
 		if cur, ok := touched[it.ID.Client]; !ok || it.ID.Clock < cur {
 			touched[it.ID.Client] = it.ID.Clock

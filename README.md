@@ -159,7 +159,7 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 | Subdocuments (`Map.SetDoc` / `Map.GetDoc`) | done; `ContentDoc` wire format (GUID + options) byte-compatible with `yjs@13.6.31`, cross-language fixtures. Lifecycle events via OnSubdocs / autoLoad / Load |
 | Wire client-ID width | 53-bit client IDs throughout (`uint64` + varint), byte-verified against `yjs@13.6.31` for IDs above 2^32. Forward-compatible with the wider client-ID space yjs@14 introduces |
 | Commit-time block squash | done; merges same-client adjacent-clock items at commit (~1 byte/char V1), paired with Apply-side partial-overlap slicing for correct remote integration of merged blocks |
-| GC merging | done; deleted content is freed at commit (ContentDeleted, byte-aligned with yjs) and adjacent deleted runs are merged. Skipped when GC is disabled or for items an UndoManager keeps |
+| GC merging | done; deleted leaf content is freed at commit (ContentDeleted, byte-aligned with yjs) and adjacent deleted runs are merged. Skipped when GC is disabled or for items an UndoManager keeps. Deleted nested-type subtrees are not yet recursively collected (convergence holds; see [tech-debt.md](docs/tech-debt.md)) |
 
 ## Goals
 

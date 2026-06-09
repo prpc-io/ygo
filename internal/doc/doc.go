@@ -229,6 +229,17 @@ func (d *Doc) PutSubdoc(sub *Doc) {
 	}
 }
 
+// RemoveSubdoc drops the in-memory handle for the subdocument with the
+// given GUID from the registry, so later Subdoc / GetDoc lookups no
+// longer return a stale instance. Called when a ContentDoc reference is
+// tombstoned. A no-op if no handle is registered. Safe for concurrent
+// use. CRDT state is unaffected; this only releases the cached handle.
+func (d *Doc) RemoveSubdoc(guid string) {
+	d.subdocsMu.Lock()
+	defer d.subdocsMu.Unlock()
+	delete(d.subdocs, guid)
+}
+
 // SubdocsEvent carries the subdocument lifecycle changes observed in a
 // single transaction: the GUIDs added (a ContentDoc surfaced), removed
 // (its reference was tombstoned), and loaded (autoLoad or an explicit

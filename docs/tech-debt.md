@@ -334,6 +334,14 @@
 - **Scope:** the paired work is naturally a single grant milestone ("Commit lifecycle completion + Apply-side partial-overlap"). Estimated 400-600 LOC + tests. Should subsume the existing "Transaction commit lifecycle is a no-op" tech-debt entry above when shipped.
 - **When to address:** unblock each step as the underlying layer lands. Squash first (right after Item.Integrate, since squash is what consumes mergeBlocks). Update emission second (with V1 encoder). Observers third. GC and subdocs last.
 
+### GC does not recurse into deleted nested-type subtrees
+
+- **Where:** `internal/doc/transaction.go` `(*TransactionMut).gcDeleted` and `Delete`.
+- **What:** commit-time GC frees the content of a deleted leaf item (swaps it to `ContentDeleted`, byte-aligned with yjs) and merges adjacent deleted runs. When the deleted item is a nested type (`KindType`: a Map / Array / Text held under a map key or list slot), yjs recursively tombstones and collects the whole subtree. We tombstone the reference item but leave the child branch's items live in the store.
+- **Impact:** convergence is unaffected (the subtree is unreachable through the parent, so it never resurfaces in user-visible state, and the wire delete-set still covers the reference). The divergence is byte-level only: for a document that deletes a populated nested type, ygo under-GCs versus yjs, so a re-encode carries child items yjs would have dropped. Leaf deletes (text, scalars, subdoc references) are fully aligned.
+- **Why deferred:** the fix is a recursive `TransactionMut.Delete` that walks `Branch.Start` (list children) and `Branch.Map` (map children) tombstoning each, then recurses; it needs careful interaction with the keep-flag and the squash/merge passes. Out of scope for v1.0; the affected path (deleting a non-empty nested type and then re-encoding) is uncommon and never breaks sync.
+- **When to address:** when a cross-language fixture for nested-type deletion is added, or if a user reports doc-size growth after deleting large nested structures.
+
 ### Transaction lifetime not enforced
 
 - **Where:** `internal/doc/transaction.go` `Transaction`, `TransactionMut`.
