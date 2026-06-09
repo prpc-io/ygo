@@ -152,6 +152,11 @@ type UndoManager = undo.UndoManager
 // the defaults: 500 ms capture timeout, track local (nil) origin only.
 type UndoManagerOptions = undo.Options
 
+// SubdocsEvent carries the subdocument lifecycle changes of one
+// transaction: GUIDs added, removed, and loaded. Observe with
+// Doc.OnSubdocs.
+type SubdocsEvent = doc.SubdocsEvent
+
 // UndoScope is anything an UndoManager can watch. Every shared-type
 // wrapper (Map, Array, Text, XmlFragment, XmlElement, XmlText)
 // satisfies it via its Branch method.

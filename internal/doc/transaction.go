@@ -94,6 +94,14 @@ type TransactionMut struct {
 	beforeState store.StateVector
 	afterState  store.StateVector
 
+	// subdocsAdded / subdocsRemoved / subdocsLoaded accumulate the
+	// subdocument lifecycle changes produced this transaction, surfaced
+	// to observers via the SubdocsAdded / SubdocsRemoved / SubdocsLoaded
+	// accessors. Populated by trackSubdocs in Commit.
+	subdocsAdded   []string
+	subdocsRemoved []string
+	subdocsLoaded  []string
+
 	// mergeBlocks would accumulate item IDs that should be
 	// considered for try_squash at Commit. Will be added back when
 	// Item.Integrate gains a MarkForMerge call site and Commit
@@ -144,6 +152,9 @@ func (t *TransactionMut) Commit() {
 	// created this transaction into their predecessors. Clocks are
 	// preserved, so afterState (captured above) stays valid.
 	t.squashNewBlocks()
+	// Collect subdocument lifecycle changes (added / removed / loaded)
+	// so observers see them, before handlers fire.
+	t.trackSubdocs()
 	// AfterTransaction handlers fire here, while the write lock is
 	// still held. They observe a finalised TransactionMut state and
 	// must not start a new ReadTxn / WriteTxn on the same doc. The
@@ -156,6 +167,66 @@ func (t *TransactionMut) Commit() {
 	t.gcDeleted()
 	t.doc.mu.Unlock()
 }
+
+// trackSubdocs records the subdocument lifecycle changes this
+// transaction produced: ContentDoc items created this transaction are
+// "added" (and "loaded" when their options carry autoLoad or the
+// subdoc was explicitly loaded), and ContentDoc items tombstoned this
+// transaction are "removed". Mirrors yjs's subdocsAdded / subdocsLoaded
+// / subdocsRemoved sets. Each added subdoc is registered on the doc so
+// the in-memory handle is reachable via Subdoc(guid).
+func (t *TransactionMut) trackSubdocs() {
+	bs := t.doc.store
+	for client, after := range t.afterState {
+		clock := t.beforeState[client]
+		for clock < after {
+			it := bs.GetItem(block.ID{Client: client, Clock: clock})
+			if it == nil {
+				clock++
+				continue
+			}
+			if it.Content.Kind == block.KindDoc {
+				guid := it.Content.DocGuid
+				t.subdocsAdded = append(t.subdocsAdded, guid)
+				sub := t.doc.Subdoc(guid) // create + register the handle
+				if optBool(it.Content.DocOpts, "autoLoad") {
+					sub.Load()
+				}
+				if sub.ShouldLoad() {
+					t.subdocsLoaded = append(t.subdocsLoaded, guid)
+				}
+			}
+			clock = it.ID.Clock + it.Len
+		}
+	}
+	for _, id := range t.deletedIDs {
+		it := bs.GetItem(id)
+		if it != nil && it.Content.Kind == block.KindDoc {
+			t.subdocsRemoved = append(t.subdocsRemoved, it.Content.DocGuid)
+		}
+	}
+}
+
+// optBool reads a boolean option from a ContentDoc options map.
+func optBool(opts map[string]any, key string) bool {
+	if opts == nil {
+		return false
+	}
+	v, _ := opts[key].(bool)
+	return v
+}
+
+// SubdocsAdded returns the GUIDs of subdocuments first surfaced during
+// this transaction (local SetDoc or a decoded remote ContentDoc).
+func (t *TransactionMut) SubdocsAdded() []string { return t.subdocsAdded }
+
+// SubdocsRemoved returns the GUIDs of subdocuments whose reference was
+// tombstoned during this transaction.
+func (t *TransactionMut) SubdocsRemoved() []string { return t.subdocsRemoved }
+
+// SubdocsLoaded returns the GUIDs of subdocuments marked to load during
+// this transaction (autoLoad option or an explicit Load call).
+func (t *TransactionMut) SubdocsLoaded() []string { return t.subdocsLoaded }
 
 // gcDeleted frees the content of items tombstoned during this
 // transaction and merges adjacent deleted runs, matching yjs's

@@ -192,7 +192,25 @@ func (m *Map) SetText(txn *doc.TransactionMut, key string) *Text {
 // options). Mirrors yjs `map.set(key, new Y.Doc())`.
 func (m *Map) SetDoc(txn *doc.TransactionMut, key string) *doc.Doc {
 	sub := doc.NewDocWithOptions(doc.Options{DisableGC: true})
-	m.setDocRef(txn, key, sub.GUID())
+	m.setDocRefWithOpts(txn, key, sub.GUID(), map[string]any{})
+	txn.Doc().PutSubdoc(sub)
+	return sub
+}
+
+// SetDocWithOptions is SetDoc with subdocument options. When autoLoad
+// is true the reference carries the autoLoad flag on the wire, so peers
+// that decode it mark the subdocument to load automatically (it appears
+// in their SubdocsLoaded set).
+func (m *Map) SetDocWithOptions(txn *doc.TransactionMut, key string, autoLoad bool) *doc.Doc {
+	sub := doc.NewDocWithOptions(doc.Options{DisableGC: true})
+	if autoLoad {
+		sub.Load()
+	}
+	opts := map[string]any{}
+	if autoLoad {
+		opts["autoLoad"] = true
+	}
+	m.setDocRefWithOpts(txn, key, sub.GUID(), opts)
 	txn.Doc().PutSubdoc(sub)
 	return sub
 }
@@ -209,8 +227,8 @@ func (m *Map) GetDoc(d *doc.Doc, key string) (*doc.Doc, bool) {
 	return d.Subdoc(item.Content.DocGuid), true
 }
 
-// setDocRef integrates a ContentDoc reference item under key.
-func (m *Map) setDocRef(txn *doc.TransactionMut, key, guid string) {
+// setDocRefWithOpts integrates a ContentDoc reference item under key.
+func (m *Map) setDocRefWithOpts(txn *doc.TransactionMut, key, guid string, opts map[string]any) {
 	clientID := txn.Doc().ClientID()
 	clock := txn.Store().GetClock(clientID)
 
@@ -228,7 +246,7 @@ func (m *Map) setDocRef(txn *doc.TransactionMut, key, guid string) {
 		Len:       1,
 		Origin:    origin,
 		Left:      left,
-		Content:   block.Content{Kind: block.KindDoc, DocGuid: guid, DocOpts: map[string]any{}},
+		Content:   block.Content{Kind: block.KindDoc, DocGuid: guid, DocOpts: opts},
 		Parent:    block.Parent{Kind: block.ParentBranch, Branch: m.branch},
 		ParentSub: &keyCopy,
 		Flags:     block.FlagCountable,

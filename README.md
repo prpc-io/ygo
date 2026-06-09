@@ -127,7 +127,7 @@ txn.Commit()
 got, ok := m.GetDoc(d, "child") // got.GUID() == sub.GUID()
 ```
 
-The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.31`, verified by cross-language fixtures. Subdocument lifecycle events (load / autoLoad) are not yet implemented.
+The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.31`, verified by cross-language fixtures. Lifecycle events are observable via `d.OnSubdocs` (added / removed / loaded GUIDs per transaction); `SetDocWithOptions(..., autoLoad)` and `subdoc.Load()` drive the loaded set, so a sync provider knows which nested documents to fetch.
 
 ## Status
 
@@ -156,7 +156,7 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 | dmonad/crdt-benchmarks B1-B4 port | done; B1.1-B1.11 / B2.1-B2.4 / B3.1+3+4 / B4 (260k-edit real-world LaTeX trace). Baseline in [BENCHMARKS.md](BENCHMARKS.md). |
 | `UndoManager` (`internal/undo`) | done; scoped Undo / Redo over Map / Array / Text with capture-timeout grouping, tracked-origin filtering, and a `Redone` chain for deletion restore. Cross-language conformance vs `yjs@13.6.31` (7 scenarios) |
 | Snapshots (`CreateSnapshot` / `EncodeSnapshot` / `RestoreSnapshot`) | done; V1 wire format byte-compatible with `yjs@13.6.31` (cross-language fixtures incl. multi-client), `RestoreSnapshot` mirrors `Y.createDocFromSnapshot` |
-| Subdocuments (`Map.SetDoc` / `Map.GetDoc`) | done; `ContentDoc` wire format (GUID + options) byte-compatible with `yjs@13.6.31`, cross-language fixtures. Lifecycle events (load / autoLoad) pending |
+| Subdocuments (`Map.SetDoc` / `Map.GetDoc`) | done; `ContentDoc` wire format (GUID + options) byte-compatible with `yjs@13.6.31`, cross-language fixtures. Lifecycle events via OnSubdocs / autoLoad / Load |
 | Wire client-ID width | 53-bit client IDs throughout (`uint64` + varint), byte-verified against `yjs@13.6.31` for IDs above 2^32. Forward-compatible with the wider client-ID space yjs@14 introduces |
 | Commit-time block squash | done; merges same-client adjacent-clock items at commit (~1 byte/char V1), paired with Apply-side partial-overlap slicing for correct remote integration of merged blocks |
 | GC merging | done; deleted content is freed at commit (ContentDeleted, byte-aligned with yjs) and adjacent deleted runs are merged. Skipped when GC is disabled or for items an UndoManager keeps |

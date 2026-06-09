@@ -76,6 +76,12 @@ type Doc struct {
 	subdocs   map[string]*Doc
 	subdocsMu sync.Mutex
 
+	// shouldLoad reports whether this (sub)document's content should be
+	// loaded/synced. Set by Load or by the autoLoad option on the
+	// referencing ContentDoc. Drives the subdocsLoaded set. Guarded by
+	// subdocsMu.
+	shouldLoad bool
+
 	// pendingState is an opaque pointer the encoding layer uses to
 	// store a *encoding.Pending value (queued blocks and delete-set
 	// entries awaiting unresolved dependencies). We keep the type
@@ -221,6 +227,49 @@ func (d *Doc) PutSubdoc(sub *Doc) {
 	if _, ok := d.subdocs[sub.guid]; !ok {
 		d.subdocs[sub.guid] = sub
 	}
+}
+
+// SubdocsEvent carries the subdocument lifecycle changes observed in a
+// single transaction: the GUIDs added (a ContentDoc surfaced), removed
+// (its reference was tombstoned), and loaded (autoLoad or an explicit
+// Load). Mirrors yjs's "subdocs" event payload.
+type SubdocsEvent struct {
+	Added   []string
+	Removed []string
+	Loaded  []string
+}
+
+// OnSubdocs registers fn to fire after any transaction that changed the
+// document's subdocuments. Returns an unsubscribe function. A sync
+// provider uses this to learn which nested documents to start or stop
+// syncing. Convenience layer over OnAfterTransaction.
+func (d *Doc) OnSubdocs(fn func(SubdocsEvent)) func() {
+	return d.OnAfterTransaction(func(t *TransactionMut) {
+		if len(t.subdocsAdded) == 0 && len(t.subdocsRemoved) == 0 && len(t.subdocsLoaded) == 0 {
+			return
+		}
+		fn(SubdocsEvent{
+			Added:   t.subdocsAdded,
+			Removed: t.subdocsRemoved,
+			Loaded:  t.subdocsLoaded,
+		})
+	})
+}
+
+// Load marks this subdocument to be loaded. A provider watching the
+// parent's transactions sees the GUID in SubdocsLoaded and can then
+// fetch and apply the subdocument's own update stream. Idempotent.
+func (d *Doc) Load() {
+	d.subdocsMu.Lock()
+	d.shouldLoad = true
+	d.subdocsMu.Unlock()
+}
+
+// ShouldLoad reports whether this (sub)document is marked to load.
+func (d *Doc) ShouldLoad() bool {
+	d.subdocsMu.Lock()
+	defer d.subdocsMu.Unlock()
+	return d.shouldLoad
 }
 
 // Subdocs returns the GUIDs of all registered subdocuments.
