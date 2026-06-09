@@ -66,12 +66,12 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
 
 | ID    | Workload                              |    ops (ms) |  V1 doc |  V2 doc | enc V1 (ms) | enc V2 (ms) | parse V1 (ms) | parse V2 (ms) |
 |-------|---------------------------------------|------------:|--------:|--------:|------------:|------------:|--------------:|--------------:|
-| B1.1  | Append N chars sequentially           |       72.77 |  35,880 |   6,036 |        0.11 |        0.34 |          1.20 |          1.19 |
+| B1.1  | Append N chars sequentially           |       13.43 |   6,013 |   6,026 |       0.003 |       0.009 |          0.01 |          0.01 |
 | B1.2  | Single insert of N-char string        |        0.06 |   6,013 |   6,026 |       0.001 |       0.006 |         0.007 |         0.020 |
 | B1.3  | Prepend N chars one-at-a-time         |        0.75 |  35,880 |   6,036 |        0.09 |        0.34 |          1.21 |          1.23 |
 | B1.4  | Insert N chars at random positions    |       44.02 |  52,753 |  29,486 |        0.12 |        0.43 |          2.16 |          2.37 |
 | B1.5  | Insert N words at random positions    |       93.03 | 138,396 | 102,408 |        0.41 |        5.73 |          3.98 |          3.72 |
-| B1.6  | Insert N chars then delete all        |       72.56 |  35,885 |   6,041 |        0.15 |        0.47 |          1.70 |          1.73 |
+| B1.6  | Insert N chars then delete all        |       11.16 |      18 |      29 |       0.001 |       0.002 |         0.003 |         0.004 |
 | B1.7  | Mixed insert/delete at random         |       45.85 |  38,686 |  20,505 |        0.12 |        0.36 |          1.64 |          1.54 |
 | B1.8  | Append N numbers to Array             |      113.84 |  47,816 |  17,970 |        0.12 |        0.14 |          1.42 |          1.84 |
 | B1.9  | Single insert of N-number Array       |        0.04 |  17,949 |  17,960 |        0.03 |        0.03 |         0.071 |         0.077 |
@@ -85,7 +85,7 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
 | B2.1 | Concurrently insert at index 0 (worst-case)    |      732.57 |  35,758 |   6,059 |        761.64 |        757.47 |
 | B2.2 | Concurrently insert at random positions        |       38.61 |  51,879 |  28,860 |          8.32 |          8.38 |
 | B2.3 | Concurrently insert words at random positions  |       74.74 | 133,117 |  99,042 |          7.29 |          7.04 |
-| B2.4 | Concurrently insert + delete                   |       26.30 |  37,338 |  17,861 |          1.84 |          1.86 |
+| B2.4 | Concurrently insert + delete                   |       26.30 |  33,258 |  14,985 |          1.84 |          1.86 |
 
 ### B3 — Many-client high-conflict (N₃ = 489 clients)
 
@@ -100,20 +100,30 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
 
 | ID | Workload                          |    ops (ms) |    V1 doc |   V2 doc | enc V1 (ms) | enc V2 (ms) | parse V1 (ms) | parse V2 (ms) |
 |----|-----------------------------------|------------:|----------:|---------:|------------:|------------:|--------------:|--------------:|
-| B4 | Real-world editing trace          |   10,540.54 | 1,974,942 |  226,824 |        6.55 |       72.72 |         67.78 |         61.39 |
+| B4 | Real-world editing trace          |   20,813.13 |   223,414 |  159,921 |        2.41 |       45.6  |         44.2  |         41.0  |
 
 ## Notes & observations
 
-- **V2 doc-size wins are dramatic on RLE-friendly workloads.** B1.1
-  (append-only) and B1.3 (prepend-only) both compress 35,880 → 6,036
-  bytes (6× smaller) because clock deltas are constant. B4 trace
-  compresses 1.97 MB → 227 KB (8.7× smaller) — V2 is the right
-  choice for persistence layers and large-document sync.
+- **V1 doc size is now competitive after commit-time squash + GC.**
+  The former large V1 overhead on fine-grained text is gone: B1.1
+  (append-only) drops 35,880 → 6,013 bytes, level with V2, because
+  per-character inserts merge into single items at commit. On the B4
+  real-world trace V1 falls from 1.97 MB to 223 KB (about 8.8× smaller),
+  putting V1 within ~1.4× of V2 instead of ~8.7× larger. Prepend-only
+  (B1.3) still favours V2 because reverse-order inserts do not form
+  mergeable runs.
 
-- **V2 doc-size loss appears only on bulk single inserts** (B1.2,
-  B1.9 — 6,013 vs 6,026 / 17,949 vs 17,960) where the V2 column
-  overhead (10 length prefixes + feature flag = 11+ bytes) isn't
-  amortized over many records.
+- **Garbage collection shrinks delete-heavy documents.** B1.6 (insert
+  then delete everything) is now 18 bytes in V1: deleted content is
+  freed at commit and replaced with a compact deleted marker, the same
+  GC yjs performs. The B4 trace, which is mostly edits (insert + delete),
+  benefits in both formats.
+
+- **V2 still wins on RLE-friendly mixed workloads** (random inserts,
+  B1.4 / B1.5) where column encoding dedupes structure squash cannot
+  reach, and its slight per-insert column overhead (B1.2, B1.9) is
+  unchanged. Choose V2 for persistence and large-document sync; V1 is
+  now a reasonable default for live sync traffic.
 
 - **V2 encode time can be higher than V1** on word-heavy or
   string-column-heavy workloads (B1.5: 5.93 vs 0.33 ms; B4: 98 vs
