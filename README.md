@@ -103,6 +103,24 @@ ygo.NewText(restored, "t").String()         // "world!"
 
 The snapshot wire format (`EncodeSnapshot` / `DecodeSnapshot`) is byte-compatible with `yjs@13.6.20`'s `Y.encodeSnapshot`, verified by cross-language fixtures including multi-client delete-set ordering. `RestoreSnapshot` mirrors `Y.createDocFromSnapshot`.
 
+### Subdocuments
+
+Nest a `Y.Doc` inside a Map. The parent stores a reference (the subdoc's GUID); the subdocument's own content syncs as a separate update stream:
+
+```go
+d := ygo.NewDoc()
+m := ygo.NewMap(d, "m")
+
+txn := d.WriteTxn()
+sub := m.SetDoc(txn, "child") // nest a new subdocument
+txn.Commit()
+
+// after syncing the parent to another replica:
+got, ok := m.GetDoc(d, "child") // got.GUID() == sub.GUID()
+```
+
+The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.20`, verified by cross-language fixtures. Subdocument lifecycle events (load / autoLoad) are not yet implemented.
+
 ## Status
 
 **Alpha. Public API may change before v1.0.** The CRDT engine and wire format are production-stable in the sense that they have been validated bidirectionally against `yjs@13.6.20`; the API surface (function signatures, package layout) may still see small refinements.
@@ -130,7 +148,8 @@ The snapshot wire format (`EncodeSnapshot` / `DecodeSnapshot`) is byte-compatibl
 | dmonad/crdt-benchmarks B1-B4 port | done; B1.1-B1.11 / B2.1-B2.4 / B3.1+3+4 / B4 (260k-edit real-world LaTeX trace). Baseline in [BENCHMARKS.md](BENCHMARKS.md). |
 | `UndoManager` (`internal/undo`) | done; scoped Undo / Redo over Map / Array / Text with capture-timeout grouping, tracked-origin filtering, and a `Redone` chain for deletion restore. Cross-language conformance vs `yjs@13.6.20` (7 scenarios) |
 | Snapshots (`CreateSnapshot` / `EncodeSnapshot` / `RestoreSnapshot`) | done; V1 wire format byte-compatible with `yjs@13.6.20` (cross-language fixtures incl. multi-client), `RestoreSnapshot` mirrors `Y.createDocFromSnapshot` |
-| Subdocs / GC merging / commit-time block squash | planned for v1.0; see [Roadmap](#roadmap) |
+| Subdocuments (`Map.SetDoc` / `Map.GetDoc`) | done; `ContentDoc` wire format (GUID + options) byte-compatible with `yjs@13.6.20`, cross-language fixtures. Lifecycle events (load / autoLoad) pending |
+| GC merging / commit-time block squash | planned for v1.0; see [Roadmap](#roadmap) |
 
 ## Goals
 
@@ -190,7 +209,7 @@ A direct head-to-head harness against native yrs under identical hardware is on 
 
 ## Roadmap
 
-Towards v1.0: Subdocs · GC merging · commit-time block squash · external security audit · documentation site. (Undo manager and Snapshots: done.)
+Towards v1.0: GC merging · commit-time block squash · external security audit · documentation site. (Undo manager, Snapshots, Subdocuments: done.)
 
 Per-layer port notes live in [docs/yrs-port-notes/](docs/yrs-port-notes/). Items intentionally deferred or partial are tracked in [docs/tech-debt.md](docs/tech-debt.md). Detailed design decisions in [DESIGN.md](DESIGN.md).
 

@@ -105,8 +105,18 @@ func EncodeContent(buf []byte, c block.Content) []byte {
 			buf = lib0.WriteVarString(buf, c.Branch.Name)
 		}
 		return buf
+	case block.KindDoc:
+		// ContentDoc payload: varstring(guid) + Any(opts). Mirrors
+		// yjs ContentDoc.write. opts is always an object (possibly
+		// empty), never nil, so the Any tag is the object tag.
+		buf = lib0.WriteVarString(buf, c.DocGuid)
+		opts := c.DocOpts
+		if opts == nil {
+			opts = map[string]any{}
+		}
+		return EncodeAny(buf, opts)
 	default:
-		panic(fmt.Sprintf("encoding.EncodeContent: unsupported kind %d (supported: Any, String, Binary, Deleted, Type)", c.Kind))
+		panic(fmt.Sprintf("encoding.EncodeContent: unsupported kind %d (supported: Any, String, Binary, Deleted, Type, Doc)", c.Kind))
 	}
 }
 
@@ -199,6 +209,22 @@ func DecodeContent(buf []byte, refNum uint8) (block.Content, []byte, error) {
 			buf = buf[n:]
 		}
 		return block.Content{Kind: block.KindType, Branch: br}, buf, nil
+	case block.KindDoc:
+		// Mirror of EncodeContent.KindDoc: varstring(guid) + Any(opts).
+		guid, n, err := lib0.ReadVarString(buf)
+		if err != nil {
+			return block.Content{}, buf, err
+		}
+		buf = buf[n:]
+		optsAny, tail, err := DecodeAny(buf)
+		if err != nil {
+			return block.Content{}, buf, err
+		}
+		opts, _ := optsAny.(map[string]any)
+		if opts == nil {
+			opts = map[string]any{}
+		}
+		return block.Content{Kind: block.KindDoc, DocGuid: guid, DocOpts: opts}, tail, nil
 	default:
 		return block.Content{}, buf, fmt.Errorf("encoding.DecodeContent: unsupported content kind %d (tech-debt.md)", refNum)
 	}

@@ -43,6 +43,12 @@ type Options struct {
 	// (the default), NewDocWithOptions generates one via crypto/rand.
 	// Pass a fixed value only for deterministic tests.
 	ClientID uint64
+
+	// GUID is the document's stable string identity. Subdocuments are
+	// referenced by GUID on the wire. When empty (the default), a
+	// random GUID is generated. Two Docs sharing a GUID are treated as
+	// the same logical (sub)document.
+	GUID string
 }
 
 // Doc is a single CRDT replica. Construct with NewDoc.
@@ -52,10 +58,23 @@ type Options struct {
 // access from outside the doc package is not safe.
 type Doc struct {
 	clientID     uint64
+	guid         string
 	store        *store.BlockStore
 	gc           bool
 	mu           sync.RWMutex
 	rootBranches map[string]*block.Branch
+
+	// subdocs maps a subdocument GUID to its in-memory Doc handle, so
+	// repeated lookups of the same nested document return one
+	// instance. Populated when a ContentDoc is created locally or
+	// surfaced from a decoded update.
+	//
+	// Guarded by its own subdocsMu, NOT the doc write lock: SetDoc
+	// registers a subdoc from inside a write transaction (which holds
+	// d.mu), so reusing d.mu here would deadlock. The registry is an
+	// independent concern from the block store.
+	subdocs   map[string]*Doc
+	subdocsMu sync.Mutex
 
 	// pendingState is an opaque pointer the encoding layer uses to
 	// store a *encoding.Pending value (queued blocks and delete-set
@@ -140,12 +159,79 @@ func NewDocWithOptions(opts Options) *Doc {
 	if cid == 0 {
 		cid = newClientID()
 	}
+	guid := opts.GUID
+	if guid == "" {
+		guid = newGUID()
+	}
 	return &Doc{
 		clientID:     cid,
+		guid:         guid,
 		store:        store.NewBlockStore(),
 		gc:           !opts.DisableGC,
 		rootBranches: map[string]*block.Branch{},
+		subdocs:      map[string]*Doc{},
 	}
+}
+
+// newGUID returns a random hex identifier for a (sub)document,
+// mirroring yjs's default random-string guid.
+func newGUID() string {
+	var b [11]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "00000000000000000000"
+	}
+	const hexdigits = "0123456789abcdef"
+	out := make([]byte, 22)
+	for i, x := range b {
+		out[i*2] = hexdigits[x>>4]
+		out[i*2+1] = hexdigits[x&0x0f]
+	}
+	return string(out[:21])
+}
+
+// GUID returns the document's stable string identity.
+func (d *Doc) GUID() string { return d.guid }
+
+// Subdoc returns the in-memory handle for the subdocument with the
+// given GUID, creating and registering one (GC disabled, matching
+// subdoc semantics) on first access. Safe for concurrent use.
+func (d *Doc) Subdoc(guid string) *Doc {
+	d.subdocsMu.Lock()
+	defer d.subdocsMu.Unlock()
+	if d.subdocs == nil {
+		d.subdocs = map[string]*Doc{}
+	}
+	if sub, ok := d.subdocs[guid]; ok {
+		return sub
+	}
+	sub := NewDocWithOptions(Options{GUID: guid, DisableGC: true})
+	d.subdocs[guid] = sub
+	return sub
+}
+
+// PutSubdoc registers an existing Doc as a subdocument under its GUID,
+// so later Subdoc / GetDoc lookups return the same instance. A no-op if
+// a different instance is already registered for that GUID.
+func (d *Doc) PutSubdoc(sub *Doc) {
+	d.subdocsMu.Lock()
+	defer d.subdocsMu.Unlock()
+	if d.subdocs == nil {
+		d.subdocs = map[string]*Doc{}
+	}
+	if _, ok := d.subdocs[sub.guid]; !ok {
+		d.subdocs[sub.guid] = sub
+	}
+}
+
+// Subdocs returns the GUIDs of all registered subdocuments.
+func (d *Doc) Subdocs() []string {
+	d.subdocsMu.Lock()
+	defer d.subdocsMu.Unlock()
+	out := make([]string, 0, len(d.subdocs))
+	for g := range d.subdocs {
+		out = append(out, g)
+	}
+	return out
 }
 
 // ClientID returns the random per-replica identifier. Stable for the

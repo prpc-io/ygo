@@ -1,0 +1,30 @@
+{
+  "generator": "yjs@13.6.20 (ContentDoc V1)",
+  "scenarios": [
+    {
+      "description": "single subdoc in map",
+      "root_name": "m",
+      "update_hex": "01010b002901016d056368696c640d7375622d677569642d61616161760000",
+      "expect_guids": {
+        "child": "sub-guid-aaaa"
+      }
+    },
+    {
+      "description": "two subdocs in map",
+      "root_name": "m",
+      "update_hex": "01020c002901016d01610b677569642d612d3131313176002901016d01620b677569642d622d32323232760000",
+      "expect_guids": {
+        "a": "guid-a-1111",
+        "b": "guid-b-2222"
+      }
+    },
+    {
+      "description": "subdoc plus scalar key",
+      "root_name": "m",
+      "update_hex": "01020d002801016d046e616d65017706706172656e742901016d03646f630d677569642d6d697865642d3333760000",
+      "expect_guids": {
+        "doc": "guid-mixed-33"
+      }
+    }
+  ]
+}

@@ -57,6 +57,14 @@ type Content struct {
 	Move      *Move   // KindMove
 	Doc       *Doc    // KindDoc — child doc
 	ParentDoc *Doc    // KindDoc — parent doc reference, set at integrate time
+
+	// KindDoc wire payload: a subdocument is encoded as its guid
+	// (a stable string identity) followed by an options object. The
+	// nested document's *content* syncs as a separate update stream
+	// keyed by the guid; the parent only stores this reference.
+	// Mirrors yjs ContentDoc.write (writeString(guid) + writeAny(opts)).
+	DocGuid string
+	DocOpts map[string]any
 }
 
 // RefNumber returns the Yjs wire ref number for the content's kind.
@@ -146,6 +154,13 @@ func (c Content) Copy() Content {
 	}
 	if c.Bytes != nil {
 		out.Bytes = append([]byte(nil), c.Bytes...)
+	}
+	if c.DocOpts != nil {
+		m := make(map[string]any, len(c.DocOpts))
+		for k, v := range c.DocOpts {
+			m[k] = v
+		}
+		out.DocOpts = m
 	}
 	return out
 }

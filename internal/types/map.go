@@ -186,6 +186,60 @@ func (m *Map) SetText(txn *doc.TransactionMut, key string) *Text {
 // build an Item with KindType content and the supplied Branch,
 // chain off the existing tail at this key (Origin = left.LastID()),
 // push to store, integrate. The Item.Integrate KindType arm wires
+// SetDoc nests a new subdocument under key and returns its handle. The
+// subdocument carries its own GUID; its content syncs as a separate
+// update stream, while the parent stores only the reference (GUID +
+// options). Mirrors yjs `map.set(key, new Y.Doc())`.
+func (m *Map) SetDoc(txn *doc.TransactionMut, key string) *doc.Doc {
+	sub := doc.NewDocWithOptions(doc.Options{DisableGC: true})
+	m.setDocRef(txn, key, sub.GUID())
+	txn.Doc().PutSubdoc(sub)
+	return sub
+}
+
+// GetDoc returns the subdocument referenced under key within parent d,
+// or (nil, false) if key holds no live subdoc. The returned handle is
+// the registered instance for the referenced GUID (created on first
+// access for subdocs surfaced from a decoded update).
+func (m *Map) GetDoc(d *doc.Doc, key string) (*doc.Doc, bool) {
+	item, ok := m.branch.Map[key]
+	if !ok || item == nil || item.IsDeleted() || item.Content.Kind != block.KindDoc {
+		return nil, false
+	}
+	return d.Subdoc(item.Content.DocGuid), true
+}
+
+// setDocRef integrates a ContentDoc reference item under key.
+func (m *Map) setDocRef(txn *doc.TransactionMut, key, guid string) {
+	clientID := txn.Doc().ClientID()
+	clock := txn.Store().GetClock(clientID)
+
+	var origin *block.ID
+	var left *block.Item
+	if existing, ok := m.branch.Map[key]; ok {
+		left = existing
+		lid := left.LastID()
+		origin = &lid
+	}
+
+	keyCopy := key
+	item := &block.Item{
+		ID:        block.ID{Client: clientID, Clock: clock},
+		Len:       1,
+		Origin:    origin,
+		Left:      left,
+		Content:   block.Content{Kind: block.KindDoc, DocGuid: guid, DocOpts: map[string]any{}},
+		Parent:    block.Parent{Kind: block.ParentBranch, Branch: m.branch},
+		ParentSub: &keyCopy,
+		Flags:     block.FlagCountable,
+	}
+
+	txn.Store().PushBlock(item)
+	if dropped := item.Integrate(txn, 0); dropped {
+		txn.Delete(item)
+	}
+}
+
 // Branch.Item back to the Item.
 func (m *Map) setNested(txn *doc.TransactionMut, key string, inner *block.Branch) {
 	clientID := txn.Doc().ClientID()
