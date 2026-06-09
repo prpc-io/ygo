@@ -121,7 +121,7 @@ for (const [name, v] of float64Values) {
 }
 
 const out = {
-  generator: "lib0@0.2.93",
+  generator: "lib0@0.2.117",
   cases,
 };
 

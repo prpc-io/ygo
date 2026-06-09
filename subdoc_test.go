@@ -98,7 +98,7 @@ type subdocFixture struct {
 }
 
 // TestSubdoc_CrossLanguage proves ygo's ContentDoc codec is byte-
-// compatible with yjs@13.6.20. For each yjs-produced parent update we:
+// compatible with yjs@13.6.31. For each yjs-produced parent update we:
 //  1. ApplyUpdate to a fresh doc.
 //  2. Read each subdoc GUID back via Map.GetDoc and check it.
 //  3. Re-encode the doc and assert byte-identical output to the input.

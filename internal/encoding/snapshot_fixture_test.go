@@ -21,7 +21,7 @@ type snapshotFixture struct {
 }
 
 // TestSnapshotFixtures_CrossLanguage proves ygo's snapshot codec is
-// byte-compatible with yjs@13.6.20. For each yjs-produced snapshot we:
+// byte-compatible with yjs@13.6.31. For each yjs-produced snapshot we:
 //  1. Decode the bytes via DecodeSnapshot.
 //  2. Re-encode via EncodeSnapshot.
 //  3. Assert the re-encoded bytes are byte-identical to the yjs input.

@@ -26,5 +26,5 @@ to catch silent format drift.
 ## Versioning
 
 Each fixture file's top-level `generator` field records the JS package version
-(e.g. `lib0@0.2.93`, `yjs@13.6.20`). Bump these in `testdata/gen/package.json`
+(e.g. `lib0@0.2.117`, `yjs@13.6.31`). Bump these in `testdata/gen/package.json`
 and regenerate when adopting a new upstream release.

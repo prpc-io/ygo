@@ -11,11 +11,11 @@
 
 Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collaborative applications.
 
-Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients running `yjs@13.x` synchronize directly with Go servers and vice versa, with both directions verified through **124 cross-language fixture scenarios** generated from `yjs@13.6.20`. The same fixture suite doubles as a [cross-implementation conformance check](docs/reearth-cross-test/) for other pure-Go Yjs ports. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
+Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients running `yjs@13.x` synchronize directly with Go servers and vice versa, with both directions verified through **124 cross-language fixture scenarios** generated from `yjs@13.6.31`. The same fixture suite doubles as a [cross-implementation conformance check](docs/reearth-cross-test/) for other pure-Go Yjs ports. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
 
 ## Highlights
 
-- **Byte-for-byte wire compatibility, verified in both directions.** 124 cross-language fixtures (generated from `yjs@13.6.20`) cover the V1 and V2 update formats, snapshots, subdocuments, awareness, and the sync protocol, JS to Go and Go to JS. The suite runs in CI on every push, so a regression in either direction fails the build.
+- **Byte-for-byte wire compatibility, verified in both directions.** 124 cross-language fixtures (generated from `yjs@13.6.31`) cover the V1 and V2 update formats, snapshots, subdocuments, awareness, and the sync protocol, JS to Go and Go to JS. The suite runs in CI on every push, so a regression in either direction fails the build.
 - **Pure Go, no CGO.** Builds for any Go target, compiles to WASM, and cross-compiles freely. `gomobile bind` produces a verified iOS xcframework and Android AAR. No V8, no embedded JavaScript engine, no Rust FFI bridge.
 - **Complete CRDT type set.** Map, Array, Text (rich-text formatting, Quill deltas, embeds), XML types, Awareness, UndoManager, Snapshots / time-travel, and Subdocuments.
 - **Compact V1 encoding.** Commit-time block squash collapses per-character edits into single items (about 1 byte per character in V1), so document size stays competitive instead of carrying per-item overhead.
@@ -84,7 +84,7 @@ um.Undo() // m no longer has "theme"
 um.Redo() // "theme" == "dark" again
 ```
 
-Only local edits under the watched types are captured; remote updates applied via `ApplyUpdate` are not. Rapid edits inside the capture-timeout window collapse into one undo step; call `um.StopCapturing()` to force a boundary. The semantics match `yjs@13.6.20`'s `UndoManager`, checked by cross-language conformance fixtures.
+Only local edits under the watched types are captured; remote updates applied via `ApplyUpdate` are not. Rapid edits inside the capture-timeout window collapse into one undo step; call `um.StopCapturing()` to force a boundary. The semantics match `yjs@13.6.31`'s `UndoManager`, checked by cross-language conformance fixtures.
 
 ### Snapshots / time-travel
 
@@ -109,7 +109,7 @@ restored, _ := ygo.RestoreSnapshot(d, snap) // reconstruct the marked state
 ygo.NewText(restored, "t").String()         // "world!"
 ```
 
-The snapshot wire format (`EncodeSnapshot` / `DecodeSnapshot`) is byte-compatible with `yjs@13.6.20`'s `Y.encodeSnapshot`, verified by cross-language fixtures including multi-client delete-set ordering. `RestoreSnapshot` mirrors `Y.createDocFromSnapshot`.
+The snapshot wire format (`EncodeSnapshot` / `DecodeSnapshot`) is byte-compatible with `yjs@13.6.31`'s `Y.encodeSnapshot`, verified by cross-language fixtures including multi-client delete-set ordering. `RestoreSnapshot` mirrors `Y.createDocFromSnapshot`.
 
 ### Subdocuments
 
@@ -127,15 +127,15 @@ txn.Commit()
 got, ok := m.GetDoc(d, "child") // got.GUID() == sub.GUID()
 ```
 
-The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.20`, verified by cross-language fixtures. Subdocument lifecycle events (load / autoLoad) are not yet implemented.
+The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.31`, verified by cross-language fixtures. Subdocument lifecycle events (load / autoLoad) are not yet implemented.
 
 ## Status
 
-**Approaching v1.0, feature-complete.** The CRDT engine, the V1 and V2 wire formats, and the full type set above are validated bidirectionally against `yjs@13.6.20` and exercised in CI on every push. The public API surface is stabilizing; function signatures and package layout may still see small refinements before the v1.0 tag. The remaining work to v1.0 is polish (benchmarks refresh, documentation, dependency re-anchor), not new features.
+**Approaching v1.0, feature-complete.** The CRDT engine, the V1 and V2 wire formats, and the full type set above are validated bidirectionally against `yjs@13.6.31` and exercised in CI on every push. The public API surface is stabilizing; function signatures and package layout may still see small refinements before the v1.0 tag. The remaining work to v1.0 is polish (benchmarks refresh, documentation, dependency re-anchor), not new features.
 
 | Layer | Status |
 |---|---|
-| `internal/lib0` varint + RLE encoding | done; verified byte-equivalent vs JS `lib0@0.2.93` (40 + 16 fixtures) |
+| `internal/lib0` varint + RLE encoding | done; verified byte-equivalent vs JS `lib0@0.2.117` (40 + 16 fixtures) |
 | `internal/block` (Item, Content, Branch, Splice, Integrate-YATA, TrySquash, Repair, search markers) | done; full YATA conflict resolution + per-branch LRU position cache |
 | `internal/store` (BlockStore, ItemSlice, Materialize) | done |
 | `internal/doc` (Doc, Transaction, TransactionMut) | done; lock semantics + root-branch registry |
@@ -152,12 +152,12 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 | `server/` (WebSocket sync server) | done; `http.Handler` mount-anywhere shape, per-doc broadcaster, persists every applied update to optional `persist.Store`, awareness disconnect tombstones |
 | `cmd/ygo-server` (Hocuspocus-compat binary) | done; stand-alone WS server with optional sqlite persistence via `-store` flag |
 | `gomobile/` (bytes-only subset for iOS/Android) | done; bindable `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods only; pure-Go (no CGO). Both targets **verified end-to-end** on Xcode 16 + NDK 27 + Go 1.26: produces a valid `Ygo.xcframework` (real-device arm64 + simulator universal, 6.6 + 13 MB) and a valid Android `.aar` (4 archs incl. arm64-v8a / armeabi-v7a / x86 / x86_64, 8.4 MB), each drop-in for the respective IDE. See [gomobile/README.md](gomobile/README.md) for the exact commands. |
-| V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.{EncodeV2,DecodeV2}` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; bidirectional cross-language fixtures vs `yjs@13.6.20` |
+| V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.{EncodeV2,DecodeV2}` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; bidirectional cross-language fixtures vs `yjs@13.6.31` |
 | dmonad/crdt-benchmarks B1-B4 port | done; B1.1-B1.11 / B2.1-B2.4 / B3.1+3+4 / B4 (260k-edit real-world LaTeX trace). Baseline in [BENCHMARKS.md](BENCHMARKS.md). |
-| `UndoManager` (`internal/undo`) | done; scoped Undo / Redo over Map / Array / Text with capture-timeout grouping, tracked-origin filtering, and a `Redone` chain for deletion restore. Cross-language conformance vs `yjs@13.6.20` (7 scenarios) |
-| Snapshots (`CreateSnapshot` / `EncodeSnapshot` / `RestoreSnapshot`) | done; V1 wire format byte-compatible with `yjs@13.6.20` (cross-language fixtures incl. multi-client), `RestoreSnapshot` mirrors `Y.createDocFromSnapshot` |
-| Subdocuments (`Map.SetDoc` / `Map.GetDoc`) | done; `ContentDoc` wire format (GUID + options) byte-compatible with `yjs@13.6.20`, cross-language fixtures. Lifecycle events (load / autoLoad) pending |
-| Wire client-ID width | 53-bit client IDs throughout (`uint64` + varint), byte-verified against `yjs@13.6.20` for IDs above 2^32. Forward-compatible with the wider client-ID space yjs@14 introduces |
+| `UndoManager` (`internal/undo`) | done; scoped Undo / Redo over Map / Array / Text with capture-timeout grouping, tracked-origin filtering, and a `Redone` chain for deletion restore. Cross-language conformance vs `yjs@13.6.31` (7 scenarios) |
+| Snapshots (`CreateSnapshot` / `EncodeSnapshot` / `RestoreSnapshot`) | done; V1 wire format byte-compatible with `yjs@13.6.31` (cross-language fixtures incl. multi-client), `RestoreSnapshot` mirrors `Y.createDocFromSnapshot` |
+| Subdocuments (`Map.SetDoc` / `Map.GetDoc`) | done; `ContentDoc` wire format (GUID + options) byte-compatible with `yjs@13.6.31`, cross-language fixtures. Lifecycle events (load / autoLoad) pending |
+| Wire client-ID width | 53-bit client IDs throughout (`uint64` + varint), byte-verified against `yjs@13.6.31` for IDs above 2^32. Forward-compatible with the wider client-ID space yjs@14 introduces |
 | Commit-time block squash | done; merges same-client adjacent-clock items at commit (~1 byte/char V1), paired with Apply-side partial-overlap slicing for correct remote integration of merged blocks |
 | GC merging | done; deleted content is freed at commit (ContentDeleted, byte-aligned with yjs) and adjacent deleted runs are merged. Skipped when GC is disabled or for items an UndoManager keeps |
 
@@ -183,7 +183,7 @@ The single most-important guarantee of this project is byte-level wire compatibi
 - **32 V2 forward fixtures** (`testdata/yjs-update-v2-fixtures.json`) — same with `Y.encodeStateAsUpdateV2`.
 - **48 reverse fixtures** (`testdata/go-updates.json` + `go-update-v2-fixtures.json`) — Go encodes via `EncodeStateAsUpdate` / `EncodeStateAsUpdateV2`, JS Yjs decodes via `Y.applyUpdate` / `Y.applyUpdateV2`, state matches.
 
-The fixtures regenerate from pinned `yjs@13.6.20` + `lib0@0.2.93` + `y-protocols@1.0.6` on every CI run; `git diff --exit-code testdata/` catches byte-level regressions.
+The fixtures regenerate from pinned `yjs@13.6.31` + `lib0@0.2.117` + `y-protocols@1.0.7` on every CI run; `git diff --exit-code testdata/` catches byte-level regressions.
 
 ## How is this different from Hocuspocus / y-websocket / y-leveldb?
 
