@@ -1,0 +1,174 @@
+{
+  "generator": "yjs@13.6.31 (RelativePosition)",
+  "scenarios": [
+    {
+      "description": "text mid anchor, assoc 0, insert before",
+      "root": "t",
+      "root_kind": "text",
+      "create": {
+        "path": [],
+        "index": 6,
+        "assoc": 0
+      },
+      "rpos_hex": "00150600",
+      "update_before_hex": "01011500040101740b68656c6c6f20776f726c6400",
+      "expected_index_before": 6,
+      "update_after_hex": "01021500040101740b68656c6c6f20776f726c644415000458595a2000",
+      "expected_index_after": 10
+    },
+    {
+      "description": "assoc 0 at index 1 of \"ab\", insert at 1",
+      "root": "t",
+      "root_kind": "text",
+      "create": {
+        "path": [],
+        "index": 1,
+        "assoc": 0
+      },
+      "rpos_hex": "00160100",
+      "update_before_hex": "010116000401017402616200",
+      "expected_index_before": 1,
+      "update_after_hex": "010316000401017401618416000162c416001601015800",
+      "expected_index_after": 2
+    },
+    {
+      "description": "assoc -1 at index 1 of \"ab\", insert at 1",
+      "root": "t",
+      "root_kind": "text",
+      "create": {
+        "path": [],
+        "index": 1,
+        "assoc": -1
+      },
+      "rpos_hex": "00160041",
+      "update_before_hex": "010116000401017402616200",
+      "expected_index_before": 1,
+      "update_after_hex": "010316000401017401618416000162c416001601015800",
+      "expected_index_after": 1
+    },
+    {
+      "description": "empty root text, end-of-type tname anchor",
+      "root": "t",
+      "root_kind": "text",
+      "create": {
+        "path": [],
+        "index": 0,
+        "assoc": 0
+      },
+      "rpos_hex": "01017400",
+      "update_before_hex": "0000",
+      "expected_index_before": 0,
+      "update_after_hex": "010117000401017402787900",
+      "expected_index_after": 2
+    },
+    {
+      "description": "left-assoc end anchor on last char",
+      "root": "t",
+      "root_kind": "text",
+      "create": {
+        "path": [],
+        "index": 3,
+        "assoc": -1
+      },
+      "rpos_hex": "00180241",
+      "update_before_hex": "01011800040101740361626300",
+      "expected_index_before": 3,
+      "update_after_hex": "01011800040101740661626364656600",
+      "expected_index_after": 3
+    },
+    {
+      "description": "nested text item anchor",
+      "root": "m",
+      "root_kind": "map",
+      "create": {
+        "path": [
+          "inner"
+        ],
+        "index": 1,
+        "assoc": 0
+      },
+      "rpos_hex": "00190200",
+      "update_before_hex": "010219002701016d05696e6e6572020400190002616200",
+      "expected_index_before": 1,
+      "update_after_hex": "010319002701016d05696e6e65720204001900026162441901015a00",
+      "expected_index_after": 2
+    },
+    {
+      "description": "nested text end-of-type anchor (type ID)",
+      "root": "m",
+      "root_kind": "map",
+      "create": {
+        "path": [
+          "inner"
+        ],
+        "index": 2,
+        "assoc": 0
+      },
+      "rpos_hex": "02190000",
+      "update_before_hex": "010219002701016d05696e6e6572020400190002616200",
+      "expected_index_before": 2,
+      "update_after_hex": "010319002701016d05696e6e65720204001900026162441901015a00",
+      "expected_index_after": 3
+    },
+    {
+      "description": "anchor inside deleted range resolves to boundary",
+      "root": "t",
+      "root_kind": "text",
+      "create": {
+        "path": [],
+        "index": 3,
+        "assoc": 0
+      },
+      "rpos_hex": "001a0300",
+      "update_before_hex": "01011a00040101740661626364656600",
+      "expected_index_before": 3,
+      "update_after_hex": "01031a0004010174026162811a0103841a040166011a010203",
+      "expected_index_after": 2
+    },
+    {
+      "description": "wide (53-bit) client ID anchor",
+      "root": "t",
+      "root_kind": "text",
+      "create": {
+        "path": [],
+        "index": 1,
+        "assoc": 0
+      },
+      "rpos_hex": "0085808080200100",
+      "update_before_hex": "01018580808020000401017402686900",
+      "expected_index_before": 1,
+      "update_after_hex": "01028580808020000401017402686944858080802000012100",
+      "expected_index_after": 2
+    },
+    {
+      "description": "surrogate pair: UTF-16 unit indexing",
+      "root": "t",
+      "root_kind": "text",
+      "create": {
+        "path": [],
+        "index": 3,
+        "assoc": 0
+      },
+      "rpos_hex": "001b0300",
+      "update_before_hex": "01011b00040101740661f09f98806200",
+      "expected_index_before": 3,
+      "update_after_hex": "01021b00040101740661f09f988062441b0004f09f9a8000",
+      "expected_index_after": 5
+    },
+    {
+      "description": "array multi-element item anchor, delete before",
+      "root": "a",
+      "root_kind": "array",
+      "create": {
+        "path": [],
+        "index": 3,
+        "assoc": 0
+      },
+      "rpos_hex": "001c0300",
+      "update_before_hex": "01011c0008010161057d0a7d147d1e7d287d3200",
+      "expected_index_before": 3,
+      "update_after_hex": "01031c0008010161017d0a811c0002881c02027d287d32011c010102",
+      "expected_index_after": 1
+    }
+  ]
+}

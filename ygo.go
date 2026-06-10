@@ -185,6 +185,56 @@ func newUndoManager(d *Doc, opts UndoManagerOptions, scope []UndoScope) *UndoMan
 	return undo.NewUndoManager(d, branches, opts)
 }
 
+// RelativePosition is a cursor/selection anchor attached to the
+// document model rather than a numeric index, so it stays on the same
+// logical character as concurrent edits land. Create one with
+// CreateRelativePositionFromTypeIndex, ship it between peers with
+// EncodeRelativePosition (byte-compatible with Y.encodeRelativePosition),
+// and resolve it back to an index with
+// CreateAbsolutePositionFromRelativePosition.
+type RelativePosition = types.RelativePosition
+
+// AbsolutePosition is a resolved RelativePosition: the shared type's
+// branch and the current numeric index within it.
+type AbsolutePosition = types.AbsolutePosition
+
+// SharedType is any shared-type wrapper (Map, Array, Text,
+// XmlFragment, XmlElement, XmlText). Alias of UndoScope; both name the
+// same one-method interface.
+type SharedType = UndoScope
+
+// CreateRelativePositionFromTypeIndex anchors index within the shared
+// type t (any wrapper: Map, Array, Text, Xml*). index counts UTF-16
+// code units for Text, elements for Array. assoc >= 0 sticks to the
+// character after the position (default for cursors), assoc < 0 to the
+// character before it.
+func CreateRelativePositionFromTypeIndex(t SharedType, index uint64, assoc int64) (RelativePosition, error) {
+	return types.CreateRelativePositionFromTypeIndex(t, index, assoc)
+}
+
+// EncodeRelativePosition serialises rpos to the yjs binary form
+// (byte-compatible with Y.encodeRelativePosition). Errors only on a
+// zero-value rpos with no anchor set.
+func EncodeRelativePosition(rpos RelativePosition) ([]byte, error) {
+	return types.EncodeRelativePosition(rpos)
+}
+
+// DecodeRelativePosition parses the yjs binary form.
+func DecodeRelativePosition(buf []byte) (RelativePosition, error) {
+	return types.DecodeRelativePosition(buf)
+}
+
+// CreateAbsolutePositionFromRelativePosition resolves rpos against the
+// current state of d. ok is false when the anchor refers to state this
+// replica has not yet seen or to a garbage-collected range.
+//
+// Acquires the doc's locks internally; calling it while holding an
+// open Transaction / TransactionMut on the same doc from the same
+// goroutine deadlocks (Go RWMutex is not re-entrant).
+func CreateAbsolutePositionFromRelativePosition(d *Doc, rpos RelativePosition) (AbsolutePosition, bool) {
+	return types.CreateAbsolutePositionFromRelativePosition(d, rpos)
+}
+
 // Awareness tracks per-client ephemeral state (cursors, names,
 // selections). Independent of any Doc; the local clientID is
 // passed at construction. Embedders typically pair an Awareness
