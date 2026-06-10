@@ -8,6 +8,11 @@
 // keyed by docName, plus a compaction primitive (Flush) that squashes
 // the log into a single snapshot update.
 //
+// Backends may additionally implement VersionStore (see versions.go)
+// to provide named point-in-time document versions that live
+// independently of the update log: history survives Flush and
+// ClearDocument, and pruning history never touches live state.
+//
 // The wire-format guarantee is one-way: bytes that go in via
 // StoreUpdate are the bytes that come out via GetUpdates. The persist
 // layer never inspects, decodes, re-encodes, or splits updates; it

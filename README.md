@@ -160,6 +160,8 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 | Wire client-ID width | 53-bit client IDs throughout (`uint64` + varint), byte-verified against `yjs@13.6.31` for IDs above 2^32. Forward-compatible with the wider client-ID space yjs@14 introduces |
 | Commit-time block squash | done; merges same-client adjacent-clock items at commit (~1 byte/char V1), paired with Apply-side partial-overlap slicing for correct remote integration of merged blocks |
 | GC merging | done; deleted content is freed at commit (ContentDeleted, byte-aligned with yjs) and adjacent deleted runs are merged. Deleting a nested shared type recursively collapses its whole subtree into garbage-collected runs (cross-language fixtures), matching yjs. Skipped when GC is disabled or for items an UndoManager keeps |
+| Relative positions (cursors) | done; `CreateRelativePositionFromTypeIndex` / `CreateAbsolutePositionFromRelativePosition`, binary form byte-compatible with `Y.encodeRelativePosition`, follows undone deletions; cross-language fixtures incl. surrogate pairs and 53-bit client IDs |
+| Versioned persistence | done; named point-in-time versions independent of the live log (`persist.VersionStore`: save / list / load / restore / prune), atomic restore, sqlite reference implementation |
 
 ## Goals
 
