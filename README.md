@@ -11,11 +11,11 @@
 
 Pure-Go port of [Yjs](https://github.com/yjs/yjs), the CRDT framework for collaborative applications.
 
-Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients running `yjs@13.x` synchronize directly with Go servers and vice versa, with both directions verified through **124 cross-language fixture scenarios** generated from `yjs@13.6.31`. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
+Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients running `yjs@13.x` synchronize directly with Go servers and vice versa, with both directions verified through **158 cross-language fixture scenarios** generated from `yjs@13.6.31`. The bundled WebSocket server is Hocuspocus-compatible. No CGO; `gomobile bind` produces verified iOS xcframework and Android AAR.
 
 ## Highlights
 
-- **Byte-for-byte wire compatibility, verified in both directions.** 124 cross-language fixtures (generated from `yjs@13.6.31`) cover the V1 and V2 update formats, snapshots, subdocuments, awareness, and the sync protocol, JS to Go and Go to JS. The suite runs in CI on every push, so a regression in either direction fails the build.
+- **Byte-for-byte wire compatibility, verified in both directions.** 158 cross-language fixture scenarios (generated from `yjs@13.6.31`) cover the V1 and V2 update formats, snapshots, subdocuments, undo, relative positions, GC, awareness, and the sync protocol, JS to Go and Go to JS, plus 56 lib0 primitive vectors. The suite runs in CI on every push, so a regression in either direction fails the build.
 - **Pure Go, no CGO.** Builds for any Go target, compiles to WASM, and cross-compiles freely. `gomobile bind` produces a verified iOS xcframework and Android AAR. No V8, no embedded JavaScript engine, no Rust FFI bridge.
 - **Complete CRDT type set.** Map, Array, Text (rich-text formatting, Quill deltas, embeds), XML types, Awareness, UndoManager, Snapshots / time-travel, and Subdocuments.
 - **Compact encoding.** Commit-time block squash collapses per-character edits into single items (about 1 byte per character in V1), and garbage collection frees deleted content at commit. On a real-world editing trace V1 document size drops from ~1.97 MB to ~223 KB, competitive with V2.
@@ -177,11 +177,12 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 
 ## Wire compatibility
 
-The single most-important guarantee of this project is byte-level wire compatibility with `yjs@13.x`. This is enforced by **109 cross-language fixture scenarios**:
+The single most-important guarantee of this project is byte-level wire compatibility with `yjs@13.x`. This is enforced by **158 cross-language fixture scenarios** (plus 56 lib0 primitive vectors):
 
 - **29 V1 forward fixtures** (`testdata/yjs-updates.json`) — JS Yjs encodes via `Y.encodeStateAsUpdate`, Go decodes and applies, state matches.
 - **32 V2 forward fixtures** (`testdata/yjs-update-v2-fixtures.json`) — same with `Y.encodeStateAsUpdateV2`.
 - **48 reverse fixtures** (`testdata/go-updates.json` + `go-update-v2-fixtures.json`) — Go encodes via `EncodeStateAsUpdate` / `EncodeStateAsUpdateV2`, JS Yjs decodes via `Y.applyUpdate` / `Y.applyUpdateV2`, state matches.
+- **49 feature fixtures** — XML (5), awareness (6), sync protocol (6), undo (7), snapshots (4), subdocuments (3), wire edge cases incl. 53-bit client IDs (3), nested-type GC (4), relative positions (11), all captured from the pinned JS reference and byte-compared in both directions where the feature has a Go encoder.
 
 The fixtures regenerate from pinned `yjs@13.6.31` + `lib0@0.2.117` + `y-protocols@1.0.7` on every CI run; `git diff --exit-code testdata/` catches byte-level regressions.
 
@@ -204,16 +205,16 @@ See [BENCHMARKS.md](BENCHMARKS.md) for the full table. Highlights from B4 (259,7
 
 | Metric | Ygo V1 | Ygo V2 | yjs (Node, Intel i5-8400) | ywasm (Intel i5-8400) |
 |---|---|---|---|---|
-| Apply all edits | 10.5 s | 10.5 s | 5.7 s | 28.7 s |
-| Encoded doc size | 1.97 MB | **227 KB** | 160 KB | 160 KB |
-| Encode time | 7.7 ms | 73 ms | 11 ms | 3 ms |
-| Parse time | 68 ms | 61 ms | 39 ms | 16 ms |
+| Apply all edits | 20.3 s | 20.3 s | 5.7 s | 28.7 s |
+| Encoded doc size | **223 KB** | **160 KB** | 160 KB | 160 KB |
+| Encode time | 0.6 ms | 10.5 ms | 11 ms | 3 ms |
+| Parse time | 4.4 ms | 4.5 ms | 39 ms | 16 ms |
 
 **How to read this:**
 
-- **Apply throughput** — within ~1.85× of native yjs on different hardware (Apple M3 vs Intel i5-8400; the M3 is generally faster so the real ratio is closer than the wall-clock suggests). Native yrs publishes sub-10-s numbers on similar hardware, putting Ygo within roughly 1.0-1.5× of yrs and comfortably under the DESIGN.md "within 2×" target. (ywasm is yrs compiled to WebAssembly and is not representative of native yrs — wasm overhead inflates it ~5×.)
-- **V2 doc size** is competitive with yjs at 1.4× — V2's per-column RLE encoding effectively dedupes per-item overhead at the wire layer.
-- **V1 doc size** is now competitive: commit-time block squash merges same-client adjacent-clock items at commit, so per-character `Text.Insert` runs collapse into single items. A 2,000-character sequential insert encodes to ~1.0 byte/char in V1 (previously ~12× larger when every character was its own Item). Squash ships with the paired Apply-side partial-overlap handling that keeps remote integration correct when a peer sends a merged block overlapping the receiver's state.
+- **Doc sizes are now at or near yjs parity.** V1 lands within 1.4× of yjs (223 KB vs 160 KB; it was 1.97 MB, ~12× bloat, before commit-time block squash + GC shipped). V2 matches yjs byte-for-byte-scale at 160 KB. A 2,000-character sequential insert encodes to ~1.0 byte/char in V1. Squash ships with the paired Apply-side partial-overlap handling that keeps remote integration correct when a peer sends a merged block overlapping the receiver's state.
+- **Apply throughput is the trade.** ~3.5× yjs wall-clock on different hardware (Apple M3 vs the slower i5-8400, so the normalized gap is wider): the per-commit squash + GC scans that buy the 8.8× smaller documents roughly doubled apply time versus the pre-squash build. Against yrs's published sub-10-s B4 numbers this sits at about 2×, at the DESIGN.md target boundary, with known commit-pipeline optimization headroom. (ywasm is yrs compiled to WebAssembly and is not representative of native yrs — wasm overhead inflates it ~5×.)
+- **Encode and parse are fast once the doc is compact:** V1 encode 0.6 ms and parse 4.4 ms on the 223 KB document, both ahead of yjs's published numbers on its hardware.
 
 A direct head-to-head harness against native yrs under identical hardware is on the roadmap but not yet run; the numbers above are honest absolute figures with hardware caveats.
 

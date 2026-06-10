@@ -50,7 +50,10 @@ only (encode/parse paths unaffected by markers).
 | **B4  Real-world LaTeX trace**  |   **83,593**|  **10,540**| **-87%** |
 
 The B4 result is the headline — 8× speedup on the canonical
-real-world workload. Random-insert workloads improved 30-35%
+real-world workload. (Historical snapshot of the markers change
+in isolation; current main measures ~20.3 s on B4 because
+commit-time squash + GC later added per-commit work — see the
+B4 table and notes below.) Random-insert workloads improved 30-35%
 because the per-edit walk distance drops from O(N) to O(local
 delta from previous edit). Prepend-only workloads show small
 regressions (a few hundred ns/op) attributable to the marker
@@ -100,7 +103,7 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
 
 | ID | Workload                          |    ops (ms) |    V1 doc |   V2 doc | enc V1 (ms) | enc V2 (ms) | parse V1 (ms) | parse V2 (ms) |
 |----|-----------------------------------|------------:|----------:|---------:|------------:|------------:|--------------:|--------------:|
-| B4 | Real-world editing trace          |   20,813.13 |   223,414 |  159,921 |        2.41 |       45.6  |         44.2  |         41.0  |
+| B4 | Real-world editing trace          |   20,259.0  |   223,414 |  159,921 |        0.62 |       10.5  |          4.4  |          4.5  |
 
 ## Notes & observations
 
@@ -126,8 +129,8 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
   now a reasonable default for live sync traffic.
 
 - **V2 encode time can be higher than V1** on word-heavy or
-  string-column-heavy workloads (B1.5: 5.93 vs 0.33 ms; B4: 98 vs
-  7.7 ms) because of `StringEncoder` UTF-16 length computation and
+  string-column-heavy workloads (B1.5: 5.93 vs 0.33 ms; B4: 10.5 vs
+  0.6 ms) because of `StringEncoder` UTF-16 length computation and
   per-key staging. V1 just emits varstrings inline. Workloads with
   many small distinct strings (each going through the column key
   table) pay this most.
@@ -143,13 +146,16 @@ All times in ms (1 ms = 1,000,000 ns); doc sizes in bytes.
   single Map.Set — only one block per merge, so the integrate cost
   stays sub-linear in client count.
 
-- **B4 op-throughput** is ~0.041 ms / edit (259,778 ops / 10.5 s)
-  after search markers landed; was ~0.32 ms / edit on the pre-
-  marker baseline. yrs's published B4 numbers run sub-10 s on
-  similar hardware — we are within roughly 1.0-1.5× of yrs on
-  this workload (no direct head-to-head harness yet to pin the
-  ratio exactly; native yrs hardware-normalized numbers needed),
-  comfortably under DESIGN.md's "within 2× of yrs" target.
+- **B4 op-throughput** is ~0.078 ms / edit (259,778 ops / 20.3 s).
+  The history: ~0.32 ms / edit pre-search-markers, ~0.041 ms / edit
+  with markers, roughly doubled back when commit-time squash + GC
+  landed (every commit now runs a merge scan and a GC pass over the
+  transaction's blocks). That CPU buys the 8.8× smaller V1 document,
+  the right trade for sync traffic. Against yrs's published sub-10-s
+  B4 numbers this sits at roughly 2× — AT the DESIGN.md "within 2×
+  of yrs" boundary, not comfortably under it; the commit pipeline
+  has known optimization headroom (the squash scan re-walks the full
+  new-block range per commit).
 
 ## Comparison with yjs / ywasm (published numbers)
 
@@ -168,10 +174,10 @@ document):
 
 | Metric                | yjs (Node)  | ywasm (WASM) | ygo V1 | ygo V2 |
 |-----------------------|------------:|-------------:|-------:|-------:|
-| Apply edits (ms)      |       5,714 |       28,675 | 10,540 | 10,540 |
-| Encode (ms)           |          11 |            3 |    7.7 |   72.7 |
-| Parse (ms)            |          39 |           16 |   67.8 |   61.4 |
-| Doc size (bytes)      |     159,929 |      159,929 | **1,974,942** | **226,824** |
+| Apply edits (ms)      |       5,714 |       28,675 | 20,259 | 20,259 |
+| Encode (ms)           |          11 |            3 |    0.6 |   10.5 |
+| Parse (ms)            |          39 |           16 |    4.4 |    4.5 |
+| Doc size (bytes)      |     159,929 |      159,929 | **223,414** | **159,921** |
 | Memory used (MB)      |         3.2 |          0.0 |    n/a |    n/a |
 
 Notes:
@@ -181,41 +187,37 @@ Notes:
   the table above); native yrs's own benchmarks ship sub-1-second
   B4 numbers. A direct ygo-vs-native-yrs run under identical
   hardware is on the roadmap but not yet executed.
-- **ygo V1 doc size is bloated (~12× yjs's V1).** This is the
-  visible effect of commit-time block squash being deferred
-  (see [tech-debt.md](docs/tech-debt.md) "Transaction commit
-  lifecycle"): every per-character Text.Insert in the trace
-  produces a separate `Item`, none of which get merged with
-  their same-client adjacent-clock neighbours at commit. The
-  fix is a paired pair of changes — commit-time squash itself
-  PLUS Apply-side partial-overlap handling (post-squash peers
-  emit blocks whose clock range partially overlaps what the
-  receiver already has, and the current Apply path can't
-  slice them). Both pieces are in the same grant-scope
-  milestone. With them shipped, V1 size should drop to
-  within ~1-2× yjs's V1.
-- **ygo V2 doc size is competitive (~1.4× yjs's V1).** V2's
-  per-column RLE compression effectively dedupes the per-item
-  overhead (constant clock deltas collapse via IntDiffOptRle),
-  so it captures most of the squash benefit at the wire layer
-  without needing in-memory merging. V2 is the right choice
-  for persistence/snapshot today, regardless of squash status.
-- **Apply throughput is within ~1.85× yjs's** on this workload
-  after search markers landed — comfortably within DESIGN.md's
-  "within 2× of yrs" target (yrs is itself usually faster than
-  yjs on B4 per native benchmarks).
-- **Encode V2 is ~7× slower** than encode V1 because of
-  `StringEncoder` UTF-16 length computation and per-key staging
-  — the per-column primitives that buy us the 8.7× doc-size
-  win cost time at flush. Acceptable trade for snapshot/disk;
-  V1 is the right choice for hot-path encode (broadcast paths).
+- **ygo V1 doc size is within ~1.40× of yjs's V1** (223,414 vs
+  159,929 bytes). The historical ~12× bloat (1.97 MB, visible in
+  this table before June 2026) is resolved: commit-time block
+  squash merges per-character insert runs at commit, and GC frees
+  deleted content, the same merging yjs performs. The remaining
+  1.4× gap comes from runs that cross transaction boundaries less
+  favourably than yjs's in-memory merge timing.
+- **ygo V2 doc size matches yjs byte-for-byte-scale** (159,921 vs
+  159,929 bytes — parity). V2's per-column RLE compression plus
+  commit-time GC dedupe everything the squash reaches and more.
+  V2 is the right choice for persistence and snapshots.
+- **Apply throughput is ~3.5× yjs's wall-clock on different
+  hardware** (20.3 s on Apple M3 vs 5.7 s on the slower i5-8400,
+  so the hardware-normalized gap is wider). It was ~1.85× before
+  commit-time squash + GC landed; the per-commit merge and GC
+  scans roughly doubled apply time, in exchange for the 8.8×
+  smaller V1 documents. Relative to yrs's published sub-10-s B4
+  numbers this sits at roughly 2× — at the DESIGN.md target
+  boundary. Known optimization headroom: the squash scan re-walks
+  the full new-block range each commit.
+- **Encode V2 is ~17× slower** than encode V1 (10.5 vs 0.6 ms)
+  because of `StringEncoder` UTF-16 length computation and per-key
+  staging. With squash shipped, V1 encode is both the fastest and
+  the hot-path default; V2 remains the persistence format where
+  its size parity with yjs pays.
 
 A proper cross-impl harness that runs ygo + native yrs +
 yjs through a single comparison runner under identical
 hardware is on the [tech-debt list](docs/tech-debt.md). The
-numbers above are sufficient for positioning in grant
-applications and project documentation; a head-to-head harness
-is a "later" optimization.
+numbers above are honest absolute figures with hardware
+caveats; a head-to-head harness is a "later" optimization.
 
 ## Reproducing
 
