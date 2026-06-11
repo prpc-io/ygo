@@ -20,7 +20,7 @@ Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients 
 - **Complete CRDT type set.** Map, Array, Text (rich-text formatting, Quill deltas, embeds), XML types, Awareness, UndoManager, Snapshots / time-travel, and Subdocuments.
 - **Compact encoding.** Commit-time block squash collapses per-character edits into single items (about 1 byte per character in V1), and garbage collection frees deleted content at commit. On a real-world editing trace V1 document size drops from ~1.97 MB to ~223 KB, competitive with V2.
 - **Forward-looking wire handling.** ygo already handles both confirmed wire-level changes in the `yjs@14` release candidate: 53-bit client IDs throughout (byte-verified above 2^32) and Skip structs in the update stream (decoded as no-op gaps). Full attribution / IdMap support waits for the v14 format to stabilize.
-- **Ready-to-run server.** A Hocuspocus-compatible WebSocket server with optional sqlite persistence ships in `cmd/ygo-server`.
+- **Ready-to-run server: [yserve](docs/yserve.md).** A self-hosted Yjs server in a single static binary — a Hocuspocus alternative with no Node, no Redis, no CGO. Same wire protocol, so existing `@hocuspocus/provider` / `y-websocket` clients connect unchanged; SQLite persistence and periodic document versioning built in. Also embeds as a plain `http.Handler` inside an existing Go backend.
 - **EU-sovereign mirror** on [codeberg.org/Deln0r/ygo](https://codeberg.org/Deln0r/ygo), auto-synced from GitHub on every push for adopters who prefer or require EU-hosted code infrastructure.
 
 **Live demo:** open [ygo.deln0r.com](https://ygo.deln0r.com) in two browser tabs and start typing. Same protocol any standard Yjs ecosystem client speaks, with a pure-Go server behind it.
@@ -59,10 +59,10 @@ func main() {
 }
 ```
 
-For a collaborative server backend, see [`cmd/ygo-server`](cmd/ygo-server) — a stand-alone Hocuspocus-compatible WebSocket server with optional sqlite persistence:
+For a collaborative server backend, see [yserve](docs/yserve.md) — a stand-alone, Hocuspocus-compatible WebSocket server with SQLite persistence and document versioning, in one static binary:
 
 ```bash
-go run ./cmd/ygo-server -addr :1234 -store data.db
+go run ./cmd/yserve -addr :1234 -store data.db -version-interval 10m
 ```
 
 ### Undo / Redo
@@ -150,7 +150,7 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 | y-sync protocol (`internal/sync`) | done; full Hocuspocus message subset (Sync + Awareness + QueryAwareness + Auth + Stateless + BroadcastStateless + Close + SyncStatus); per-document Auth permission scoping deferred ([tech-debt](docs/tech-debt.md)) |
 | Awareness (`internal/awareness`) | done; LWW presence map, JSON wire payload per y-protocols, self-eviction defense, SweepOutdated |
 | `server/` (WebSocket sync server) | done; `http.Handler` mount-anywhere shape, per-doc broadcaster, persists every applied update to optional `persist.Store`, awareness disconnect tombstones |
-| `cmd/ygo-server` (Hocuspocus-compat binary) | done; stand-alone WS server with optional sqlite persistence via `-store` flag |
+| [yserve](docs/yserve.md) (Hocuspocus-compat server binary) | done; single static binary with SQLite persistence (`-store`) and periodic document versioning (`-version-interval` / `-keep-versions`); `cmd/ygo-server` remains as a deprecated alias |
 | `gomobile/` (bytes-only subset for iOS/Android) | done; bindable `Doc` + `Awareness` wrappers with bytes-in/bytes-out methods only; pure-Go (no CGO). Both targets **verified end-to-end** on Xcode 16 + NDK 27 + Go 1.26: produces a valid `Ygo.xcframework` (real-device arm64 + simulator universal, 6.6 + 13 MB) and a valid Android `.aar` (4 archs incl. arm64-v8a / armeabi-v7a / x86 / x86_64, 8.4 MB), each drop-in for the respective IDE. See [gomobile/README.md](gomobile/README.md) for the exact commands. |
 | V2 update encoding | done; lib0 RLE primitives + column encoder/decoder + `Update.{EncodeV2,DecodeV2}` + public `ygo.{EncodeStateAsUpdateV2,EncodeDiffV2,ApplyUpdateV2}`; bidirectional cross-language fixtures vs `yjs@13.6.31` |
 | dmonad/crdt-benchmarks B1-B4 port | done; B1.1-B1.11 / B2.1-B2.4 / B3.1+3+4 / B4 (260k-edit real-world LaTeX trace). Baseline in [BENCHMARKS.md](BENCHMARKS.md). |
@@ -193,8 +193,8 @@ The fixtures regenerate from pinned `yjs@13.6.31` + `lib0@0.2.117` + `y-protocol
 | Project | Runtime | What it provides | Relationship to Ygo |
 |---|---|---|---|
 | `yjs` (npm) | Node / browser | The reference CRDT implementation | Ygo's wire-format target |
-| `y-websocket` | Node | Reference WebSocket server | Ygo's `cmd/ygo-server` is a Go-native equivalent |
-| `Hocuspocus` | Node | Production WebSocket server with auth, persistence, extensions | Ygo's `cmd/ygo-server` speaks the same 8-message envelope (Sync / Awareness / QueryAwareness / Auth / Stateless / BroadcastStateless / Close / SyncStatus) |
+| `y-websocket` | Node | Reference WebSocket server | [yserve](docs/yserve.md) is a Go-native equivalent |
+| `Hocuspocus` | Node | Production WebSocket server with auth, persistence, extensions | [yserve](docs/yserve.md) speaks the same 8-message envelope (Sync / Awareness / QueryAwareness / Auth / Stateless / BroadcastStateless / Close / SyncStatus) in one static binary |
 | `yrs` | Rust | Reference Rust port | Ygo's executable spec for porting decisions |
 | `y-leveldb`, `y-indexeddb` | Node / browser | Persistence backends | Ygo's `persist/sqlite` is a Go-native equivalent |
 | **Ygo** | **Go** | **CRDT engine + WS server + persistence in one monorepo, pure-Go for native mobile** | **This project** |

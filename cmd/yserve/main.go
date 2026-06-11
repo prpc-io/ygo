@@ -1,0 +1,110 @@
+// Command yserve is a self-hosted Yjs sync server in a single static
+// binary: a drop-in replacement for a Hocuspocus deployment with no
+// Node runtime, no Redis, and no CGO.
+//
+// It speaks the Hocuspocus message envelope (Sync, Awareness,
+// QueryAwareness, Auth, Stateless, BroadcastStateless, Close,
+// SyncStatus), so existing @hocuspocus/provider and y-websocket
+// clients connect unchanged. SQLite persistence and periodic document
+// versioning are built in.
+//
+// Usage:
+//
+//	yserve [-addr :8080] [-store path/to/ygo.db]
+//	       [-version-interval 10m] [-keep-versions 10]
+//
+// Without -store the server runs purely in-memory; documents are lost
+// when their last connection disconnects. With -store every applied
+// update is persisted to a pure-Go SQLite database and document
+// history is loaded on first connect after a restart.
+//
+// With -version-interval > 0 (requires -store), every document that
+// changed since the previous interval is captured as a named version;
+// -keep-versions bounds the history per document (0 keeps everything).
+// Versions survive log compaction and can be listed, loaded, and
+// restored programmatically via the persist package.
+//
+// Mount point: documents are addressed by the URL path. A client
+// connecting to ws://host:8080/my-doc operates on docName "my-doc",
+// matching y-websocket's convention.
+package main
+
+import (
+	"context"
+	"flag"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/Deln0r/ygo/persist"
+	"github.com/Deln0r/ygo/persist/sqlite"
+	"github.com/Deln0r/ygo/server"
+)
+
+func main() {
+	addr := flag.String("addr", ":8080", "listen address")
+	storePath := flag.String("store", "", "SQLite database path for persistence (empty = in-memory)")
+	versionInterval := flag.Duration("version-interval", 0, "capture a version of each changed document at this interval (0 = off; requires -store)")
+	keepVersions := flag.Int("keep-versions", 10, "keep at most N versions per document when auto-versioning (0 = keep all)")
+	flag.Parse()
+
+	var store persist.Store
+	if *storePath != "" {
+		s, err := sqlite.Open(*storePath)
+		if err != nil {
+			log.Fatalf("yserve: open store %q: %v", *storePath, err)
+		}
+		defer s.Close()
+		store = s
+		log.Printf("yserve: persistence enabled (sqlite at %s)", *storePath)
+	} else {
+		log.Printf("yserve: in-memory only (pass -store to persist)")
+		if *versionInterval > 0 {
+			log.Fatalf("yserve: -version-interval requires -store")
+		}
+	}
+	if *versionInterval > 0 {
+		log.Printf("yserve: auto-versioning every %s (keep %d)", *versionInterval, *keepVersions)
+	}
+
+	srv := server.New(server.Options{
+		Store:           store,
+		OriginPatterns:  []string{"*"}, // dev-friendly; tighten in prod
+		VersionInterval: *versionInterval,
+		KeepVersions:    *keepVersions,
+	})
+
+	httpSrv := &http.Server{
+		Addr:    *addr,
+		Handler: srv.Handler(),
+	}
+
+	// Graceful shutdown on SIGINT/SIGTERM.
+	idleConnsClosed := make(chan struct{})
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		log.Printf("yserve: shutting down")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			log.Printf("yserve: HTTP shutdown: %v", err)
+		}
+		if err := srv.Close(ctx); err != nil {
+			log.Printf("yserve: store flush: %v", err)
+		}
+		close(idleConnsClosed)
+	}()
+
+	log.Printf("yserve: listening on %s", *addr)
+	if err := httpSrv.ListenAndServe(); err != http.ErrServerClosed {
+		log.Fatalf("yserve: %v", err)
+	}
+	<-idleConnsClosed
+	log.Printf("yserve: stopped")
+}

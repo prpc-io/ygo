@@ -1,8 +1,10 @@
-// Command ygo-server is the stand-alone WebSocket sync server for
-// ygo documents. It speaks the bare y-websocket subset of the
-// Hocuspocus envelope (Sync + Awareness + QueryAwareness), which
-// covers the universal interop subset shared by every JS Yjs
-// adopter.
+// Command ygo-server is the legacy name of the stand-alone WebSocket
+// sync server for ygo documents.
+//
+// Deprecated: use cmd/yserve instead — same server, plus
+// auto-versioning flags; new server features land there. ygo-server
+// remains a working alias for existing deployments and will be
+// removed in a future major release.
 //
 // Usage:
 //

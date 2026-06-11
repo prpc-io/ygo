@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/websocket"
 
@@ -85,6 +86,19 @@ type Options struct {
 	// MessageBroadcastStateless also fans out to other conns on
 	// the doc regardless of whether the callback is set.
 	OnStateless syncpkg.StatelessHandler
+
+	// VersionInterval enables periodic auto-versioning: every
+	// interval, each document that received updates since the last
+	// sweep is captured as a named version ("auto") via
+	// persist.SaveVersion. Requires Store to also implement
+	// persist.VersionStore (the sqlite backend does); ignored with a
+	// logged notice otherwise. Zero disables auto-versioning.
+	VersionInterval time.Duration
+
+	// KeepVersions prunes each auto-versioned document to its newest
+	// N versions after every capture. Zero keeps every version
+	// (history grows unbounded; prune externally).
+	KeepVersions int
 }
 
 // Server is the http.Handler implementation. Construct with New
@@ -94,6 +108,14 @@ type Server struct {
 
 	docsMu sync.Mutex
 	docs   map[string]*docState
+
+	// Auto-versioning state (see versioning.go). versionDirty holds
+	// the docNames updated since the last sweep; the stop/done pair
+	// manages the ticker goroutine's lifecycle.
+	versionMu    sync.Mutex
+	versionDirty map[string]struct{}
+	versionStop  chan struct{}
+	versionDone  chan struct{}
 }
 
 // New returns a Server with the given options. The returned Server
@@ -103,10 +125,12 @@ func New(opts Options) *Server {
 	if opts.DocNameFn == nil {
 		opts.DocNameFn = defaultDocName
 	}
-	return &Server{
+	s := &Server{
 		opts: opts,
 		docs: map[string]*docState{},
 	}
+	s.startVersioning()
+	return s
 }
 
 // Handler returns the http.Handler that performs the WebSocket
@@ -126,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 // continues attempting eviction past errors so partial failure
 // leaves no leaks.
 func (s *Server) Close(ctx context.Context) error {
+	s.stopVersioning()
 	s.docsMu.Lock()
 	names := make([]string, 0, len(s.docs))
 	for name := range s.docs {
@@ -382,6 +407,7 @@ func (c *conn) maybePersist(envelope []byte) {
 		return
 	}
 	_ = c.server.opts.Store.StoreUpdate(context.Background(), c.state.name, frame.Payload)
+	c.server.markVersionDirty(c.state.name)
 }
 
 // readLoop runs the per-connection message-receive loop until the
