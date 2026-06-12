@@ -122,7 +122,13 @@ func NewUndoManager(d *doc.Doc, scope []*block.Branch, opts ...Options) *UndoMan
 // the local mu inside this callback so external readers of
 // CanUndo / CanRedo see consistent state even between transactions.
 func (um *UndoManager) onAfterTransaction(mut *doc.TransactionMut) {
-	if um.closed {
+	// Closed flag is written by Close from arbitrary goroutines (a
+	// mobile UI thread closing while a background sync client commits
+	// remote transactions), so the read must hold the lock.
+	um.mu.Lock()
+	closed := um.closed
+	um.mu.Unlock()
+	if closed {
 		return
 	}
 
@@ -200,6 +206,9 @@ func (um *UndoManager) onAfterTransaction(mut *doc.TransactionMut) {
 
 	um.mu.Lock()
 	defer um.mu.Unlock()
+	if um.closed {
+		return // closed concurrently while this capture was being built
+	}
 
 	now := um.nowFn()
 	undoing := um.undoing

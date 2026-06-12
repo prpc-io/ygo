@@ -23,12 +23,18 @@
 //   - Bytes-in/bytes-out wire-format operations: this package
 //     exposes those plus a tiny Doc wrapper.
 //
-// API shape mirrors the y-protocols sync flow: encode local state
-// to bytes, apply remote bytes, exchange via your transport of
-// choice. Higher-level types (Map, Array, Text) are NOT exposed
-// here — adopters who need them either (a) wait for richer gomobile
-// support, (b) use bytes-only APIs and parse on the UI side,
-// (c) write their own wrapper that exposes typed accessors.
+// The package exposes two API levels:
+//
+//   - App level (types.go, client.go): Text (insert / delete /
+//     cursors), Map (string keys and values), UndoManager, and
+//     Client — a complete background sync provider (WebSocket,
+//     handshake, reconnect) so a Swift / Kotlin app only renders UI
+//     and edits the Doc. Reads run under internal read transactions,
+//     safe against the background client.
+//
+//   - Wire level (this file): bytes-in/bytes-out y-protocols flow —
+//     encode local state to bytes, apply remote bytes, bring your
+//     own transport.
 //
 // gomobile bind verification: actual `gomobile bind -target=ios`
 // or `-target=android` requires the corresponding toolchain (Xcode
