@@ -399,6 +399,35 @@
 - **Why deferred:** upstream `dmonad/crdt-benchmarks` JS runner shells out to native modules; integrating ygo would need a Go-side adapter producing the same JSON output the JS aggregator consumes. Native yrs needs the rust toolchain present; CI overhead non-trivial. Marginal value over the informal comparison.
 - **When to address:** opportunistic; current absolute numbers + qualitative comparison are sufficient for grant applications and project positioning. Re-prioritise if a reviewer / adopter specifically asks "show me side-by-side on identical hardware".
 
+## Client / mobile / server layers (added 2026-06-12 sprint)
+
+### gomobile bind is not run in CI
+
+- **Where:** `gomobile/` package; verification noted in `gomobile.go` package doc and README.
+- **What:** `gomobile bind -target=ios/android` was manually verified once (2026-06-12) to produce a valid xcframework / AAR, but the bind step is not part of CI (it needs Xcode / Android NDK). CI only compiles the package under pure Go, which guards against an inadvertent CGO leak via a dependency but does not prove the bind output stays valid.
+- **Why deferred:** running gomobile bind in CI needs macOS + Xcode + NDK runners, heavy and slow for a binding whose shape rarely changes.
+- **When to address:** if a binding regression ships unnoticed, or when a CI provider with the toolchain is cheap to add. Until then, re-run the README commands manually before any release that touches `gomobile/`.
+
+### gomobile Map is string-keys / string-values only
+
+- **Where:** `gomobile/types.go` `Map.SetString` / `GetString`.
+- **What:** the bindable Map exposes only string values. Non-string values written by JS peers (numbers, nested types, embeds) read back as the empty string rather than a typed value, because `any` cannot cross the gomobile bind boundary.
+- **Why deferred:** a typed-value bridge needs a tagged-union encoding (e.g. JSON per value) that adopters can decode on the UI side; out of scope for the first app-level SDK cut.
+- **When to address:** when a mobile adopter needs to read non-string map values; add `GetJSON(key)` returning the value as a JSON blob, mirroring the bytes-level approach.
+
+### gomobile awareness can only encode all clients
+
+- **Where:** `gomobile/gomobile.go` `Awareness.Encode` (package-doc note).
+- **What:** the per-client `[]uint64` selector of `internal/awareness.Encode` cannot cross the bind boundary, so the mobile wrapper exposes only encode-all. Fine for the common "broadcast my one entry" path the Client uses, but a caller wanting to encode a specific subset cannot.
+- **When to address:** if a mobile adopter needs selective awareness encoding; add a single-ID convenience method.
+
+### server auto-versioning assumes a single writer
+
+- **Where:** `server/versioning.go` (dirty-set sweep).
+- **What:** auto-versioning marks a document dirty on each persisted update from THIS server process, then versions dirty documents on a timer. A document written by a different process sharing the same database (multi-node / external writer) is not observed and would be under-versioned.
+- **Why deferred:** the single-binary deployment yserve targets is single-writer by design (SQLite file lock). Multi-writer versioning needs a storage-level change feed.
+- **When to address:** when a clustered / multi-writer deployment story lands (it would also need the Redis-relay path we do not yet have).
+
 ## Open questions captured but not resolved
 
 The following are flagged in `docs/yrs-port-notes/block.md` § "Open questions" — re-read at the time the relevant code is touched:

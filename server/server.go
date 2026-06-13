@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -406,7 +407,13 @@ func (c *conn) maybePersist(envelope []byte) {
 	if len(frame.Payload) == 0 {
 		return
 	}
-	_ = c.server.opts.Store.StoreUpdate(context.Background(), c.state.name, frame.Payload)
+	if err := c.server.opts.Store.StoreUpdate(context.Background(), c.state.name, frame.Payload); err != nil {
+		// A failed persist must not be invisible, and must not mark the
+		// document dirty: auto-versioning would then capture in-memory
+		// state that was never durably stored. Log and skip.
+		log.Printf("server: persist update for %q: %v", c.state.name, err)
+		return
+	}
 	c.server.markVersionDirty(c.state.name)
 }
 
