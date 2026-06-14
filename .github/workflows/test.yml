@@ -34,6 +34,12 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    # golangci-lint-action@v6 ships a Node 20 runtime, which GitHub is
+    # deprecating. Opt into Node 24 now. We stay on v6 (not v7) on
+    # purpose: v7 forces golangci-lint v2, which is incompatible with
+    # our pinned v1 config (see docs/tech-debt.md).
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
