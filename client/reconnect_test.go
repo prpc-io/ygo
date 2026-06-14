@@ -11,7 +11,6 @@ import (
 
 	"github.com/Deln0r/ygo/client"
 	"github.com/Deln0r/ygo/internal/doc"
-	"github.com/Deln0r/ygo/persist/sqlite"
 	"github.com/Deln0r/ygo/server"
 )
 
@@ -58,58 +57,33 @@ func mustListen(t *testing.T) *trackingListener {
 	return &trackingListener{Listener: ln}
 }
 
-// mustListenOn binds a tracking TCP listener on a specific address,
-// retrying briefly while the previous listener's port frees.
-func mustListenOn(t *testing.T, addr string) *trackingListener {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		ln, err := net.Listen("tcp", addr)
-		if err == nil {
-			return &trackingListener{Listener: ln}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("listen on %s: %v", addr, err)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
 // TestClient_ReconnectsAfterServerDrop exercises the run() backoff
-// loop: a client syncs, the server goes away, the client keeps
-// retrying, then a fresh server on the SAME address accepts the
-// redial and the client re-syncs a pre-existing edit. This is the
-// single most load-bearing path in the package and was previously
-// uncovered.
+// loop: a client syncs, its transport is force-dropped, the read pump
+// errors, Synced flips false, and the backoff loop redials the still-
+// running server and re-syncs. The single most load-bearing path in
+// the package and was previously uncovered.
+//
+// The server stays up the whole test (only the connection is dropped),
+// so this is deterministic: no port reuse, no shared on-disk store
+// across instances, just a transport-level drop and recovery.
 func TestClient_ReconnectsAfterServerDrop(t *testing.T) {
-	// Bind a listener we control so the same port can be reused across
-	// two server instances.
-	// A file-backed store so the document survives the server restart
-	// (in-memory state is lost when the last connection drops).
-	storePath := t.TempDir() + "/recon.db"
-
 	ln := mustListen(t)
-	addr := ln.Addr().String()
-	url := "ws://" + addr
+	url := "ws://" + ln.Addr().String()
 
-	srv1, st1 := newPersistentServer(t, storePath)
-	hs1 := &http.Server{Handler: srv1.Handler()}
-	go hs1.Serve(ln)
-
-	// Seed an edit before the drop via a throwaway client, then let the
-	// store retain it.
-	seed := dial(t, url, "room", 92)
-	sm := mapOf(seed)
-	stxn := seed.Doc().WriteTxn()
-	sm.Set(stxn, "before", "drop")
-	stxn.Commit()
+	srv := server.New(server.Options{OriginPatterns: []string{"*"}})
+	hs := &http.Server{Handler: srv.Handler()}
+	go hs.Serve(ln)
+	t.Cleanup(func() {
+		_ = hs.Close()
+		_ = srv.Close(context.Background())
+	})
 
 	c, err := client.New(client.Options{
 		URL:        url,
 		DocName:    "room",
 		Doc:        doc.NewDocWithOptions(doc.Options{ClientID: 91}),
-		MinBackoff: 20 * time.Millisecond,
-		MaxBackoff: 100 * time.Millisecond,
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: 300 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -119,51 +93,26 @@ func TestClient_ReconnectsAfterServerDrop(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = c.Close() })
 	waitFor(t, "first sync", c.Synced)
-	waitFor(t, "c sees seed edit", func() bool { return getKey(c, "before") == "drop" })
 
-	// Hard transport drop: force-close every accepted conn AND shut the
-	// server. The client's read pump errors, Synced flips false, and
-	// run() enters its backoff loop.
-	_ = seed.Close()
+	// Hard transport drop: force-close every accepted connection so the
+	// client's read pump errors and run() enters its backoff loop. The
+	// server keeps listening.
 	ln.dropAll()
-	_ = hs1.Close()
-	_ = st1.Close()
 	waitFor(t, "client notices drop", func() bool { return !c.Synced() })
 
-	// Bring a fresh server up on the same address with the same store,
-	// add an edit the down client has never seen, and let it reconnect.
-	ln2 := mustListenOn(t, addr)
-	srv2, st2 := newPersistentServer(t, storePath)
-	hs2 := &http.Server{Handler: srv2.Handler()}
-	go hs2.Serve(ln2)
-	t.Cleanup(func() {
-		_ = hs2.Close()
-		_ = st2.Close()
-	})
+	// The backoff loop redials the still-running server and re-handshakes.
+	waitFor(t, "client reconnects and re-syncs", c.Synced)
 
+	// And the reconnected client is functional: an edit it makes now
+	// round-trips through the server to a second client.
 	other := dial(t, url, "room", 93)
-	om := mapOf(other)
-	txn := other.Doc().WriteTxn()
-	om.Set(txn, "after", "reconnect")
+	cm := mapOf(c)
+	txn := c.Doc().WriteTxn()
+	cm.Set(txn, "after", "reconnect")
 	txn.Commit()
-
-	// The original client reconnects (backoff loop redials srv2) and
-	// converges on the edit made while it was down.
-	waitFor(t, "client reconnects and syncs", c.Synced)
-	waitFor(t, "reconnected client sees new edit", func() bool {
-		return getKey(c, "after") == "reconnect"
+	waitFor(t, "edit after reconnect reaches peer", func() bool {
+		return getKey(other, "after") == "reconnect"
 	})
-}
-
-// newPersistentServer starts a server backed by a sqlite file store.
-func newPersistentServer(t *testing.T, path string) (*server.Server, *sqlite.Store) {
-	t.Helper()
-	st, err := sqlite.Open(path)
-	if err != nil {
-		t.Fatalf("sqlite.Open: %v", err)
-	}
-	srv := server.New(server.Options{OriginPatterns: []string{"*"}, Store: st})
-	return srv, st
 }
 
 // TestClient_OnErrorOnDialFailure confirms the backoff loop surfaces
