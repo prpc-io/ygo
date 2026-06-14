@@ -78,11 +78,15 @@ type TransactionMut struct {
 	// DeletedIDs accessor for tests and future observer dispatch.
 	deletedIDs []block.ID
 
-	// changedTypes records branches whose user-observable state
-	// changed during this transaction via AddChangedType. Drives
-	// observer dispatch at Commit (not yet implemented). Read by
-	// ChangedTypes accessor.
-	changedTypes map[*block.Branch]struct{}
+	// changedTypes records, per branch whose user-observable state
+	// changed this transaction, which map keys changed and whether
+	// positional content changed. Drives observer dispatch at Commit.
+	// Read by ChangedTypes / ChangedKeys / PositionalChanged.
+	changedTypes map[*block.Branch]*changedSet
+
+	// deletedSet is the lazily-built set form of deletedIDs, used by
+	// DeletedThisTxn for the observer event's deletes() predicate.
+	deletedSet map[block.ID]struct{}
 
 	// beforeState is the per-client clock head snapshot taken when
 	// this transaction acquired the write lock. afterState is the
@@ -162,6 +166,12 @@ func (t *TransactionMut) Commit() {
 	// keep, which the GC pass below must see, so observers run BEFORE
 	// gcDeleted.
 	t.doc.fireAfterTransactionHandlers(t)
+	// Dispatch shared-type observe / observeDeep events. Runs BEFORE
+	// gcDeleted so a delete event can still read the tombstoned item's
+	// content for its oldValue (GC replaces it with a bare marker).
+	if TypeEventHook != nil {
+		TypeEventHook(t)
+	}
 	// Garbage-collect deleted content (free payloads, merge deleted
 	// runs), skipping items marked keep by an observer.
 	t.gcDeleted()
@@ -488,6 +498,10 @@ func (t *TransactionMut) Delete(item *block.Item) {
 	item.SetDeleted(true)
 	t.deletedIDs = append(t.deletedIDs, item.ID)
 	if item.Parent.IsResolved() {
+		// Record the parent (and changed key) so observers fire on
+		// deletions, mirroring yjs addChangedTypeToTransaction in
+		// Item.delete.
+		t.AddChangedType(item.Parent.Branch, item.ParentSub)
 		// Tombstoning subtracts from the parent's countable totals,
 		// mirroring yrs's branch.block_len -= len adjustment.
 		if item.IsCountable() && item.ParentSub == nil {
@@ -502,23 +516,76 @@ func (t *TransactionMut) Delete(item *block.Item) {
 	}
 }
 
-// AddChangedType records that a Branch (with optional map-key
-// discriminator) saw user-observable changes during this
-// transaction. Drives observer dispatch at Commit.
-//
-// Currently records only the Branch pointer; the map-key dimension
-// is dropped because the observer subsystem does not yet consume it.
-// See tech-debt.md.
+// AddChangedType records that a Branch saw user-observable changes
+// during this transaction, tracking the changed map keys (parentSub
+// != nil) and whether positional content changed (parentSub == nil)
+// separately. Drives observer dispatch at Commit. Mirrors yjs
+// transaction.changed (Map<AbstractType, Set<string|null>>).
 func (t *TransactionMut) AddChangedType(parent *block.Branch, parentSub *string) {
 	if parent == nil {
 		return
 	}
 	if t.changedTypes == nil {
-		t.changedTypes = map[*block.Branch]struct{}{}
+		t.changedTypes = map[*block.Branch]*changedSet{}
 	}
-	t.changedTypes[parent] = struct{}{}
-	_ = parentSub // intentionally dropped until observer subsystem lands
+	cs := t.changedTypes[parent]
+	if cs == nil {
+		cs = &changedSet{keys: map[string]struct{}{}}
+		t.changedTypes[parent] = cs
+	}
+	if parentSub != nil {
+		cs.keys[*parentSub] = struct{}{}
+	} else {
+		cs.positional = true
+	}
 }
+
+// ChangedKeys returns the set of map keys changed on branch this
+// transaction. Returns nil for a branch with no recorded key changes.
+func (t *TransactionMut) ChangedKeys(b *block.Branch) map[string]struct{} {
+	if cs := t.changedTypes[b]; cs != nil {
+		return cs.keys
+	}
+	return nil
+}
+
+// PositionalChanged reports whether branch saw positional (Array /
+// Text) content changes this transaction.
+func (t *TransactionMut) PositionalChanged(b *block.Branch) bool {
+	if cs := t.changedTypes[b]; cs != nil {
+		return cs.positional
+	}
+	return false
+}
+
+// DeletedThisTxn reports whether the item at id was tombstoned during
+// this transaction, the y-protocols "deletes(struct)" predicate the
+// observer event logic needs. Built lazily from deletedIDs on first
+// call. For map-key items (Len 1) the head-ID match is exact.
+func (t *TransactionMut) DeletedThisTxn(id block.ID) bool {
+	if t.deletedSet == nil {
+		t.deletedSet = make(map[block.ID]struct{}, len(t.deletedIDs))
+		for _, did := range t.deletedIDs {
+			t.deletedSet[did] = struct{}{}
+		}
+	}
+	_, ok := t.deletedSet[id]
+	return ok
+}
+
+// changedSet is the per-branch record of what changed this
+// transaction: which map keys, and whether positional content moved.
+type changedSet struct {
+	keys       map[string]struct{}
+	positional bool
+}
+
+// TypeEventHook, when set, is invoked during Commit (after observers'
+// AfterTransaction handlers, before GC) to dispatch shared-type
+// observe events. The types layer installs it in an init, bridging
+// the doc -> types direction without an import cycle (types imports
+// doc, not the reverse). nil in tests that never register an observer.
+var TypeEventHook func(t *TransactionMut)
 
 // GetOrCreateBranch returns the root branch with the given name from
 // the doc's root-branch registry. Used by block.Repair to resolve

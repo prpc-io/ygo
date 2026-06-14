@@ -157,6 +157,16 @@ type UndoManagerOptions = undo.Options
 // Doc.OnSubdocs.
 type SubdocsEvent = doc.SubdocsEvent
 
+// MapEvent is delivered to Map observers (Map.Observe) after a
+// transaction that changed the map, describing which keys changed and
+// how. Byte-for-byte semantic parity with yjs YMapEvent.
+type MapEvent = types.MapEvent
+
+// KeyChange describes one map key's change in a MapEvent: Action is
+// "add", "update", or "delete"; OldValue is the prior value (nil for
+// "add").
+type KeyChange = types.KeyChange
+
 // UndoScope is anything an UndoManager can watch. Every shared-type
 // wrapper (Map, Array, Text, XmlFragment, XmlElement, XmlText)
 // satisfies it via its Branch method.

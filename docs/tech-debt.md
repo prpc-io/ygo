@@ -58,12 +58,12 @@
 
 ## Types layer (Map and beyond)
 
-### Map.Observe not implemented
+### Observer subsystem: Array / Text deltas and observeDeep not yet implemented
 
-- **Where:** missing method on `internal/types/map.go` `Map`.
-- **What:** yrs's `Map::observe(callback)` registers a per-Map listener that fires on each transaction commit with a `MapEvent` describing changed keys (`map.rs` ~line 200). We have no observer subsystem yet.
-- **Impact today:** none — no caller subscribes.
-- **When to address:** with the broader observer subsystem (paired with `TransactionMut.Commit` lifecycle steps 3-6 — pre-emit observers, update event emit, after-commit observers). Pre-condition: rework `TransactionMut.changedTypes` to carry the `parent_sub` dimension (already tracked above).
+- **Where:** `internal/types/event.go`.
+- **What:** `Map.Observe` is shipped (YMapEvent parity with yjs: add / update / delete actions, oldValue, empty-event-on-net-no-op, fires on local and remote transactions). Still missing: `Array.Observe` / `Text.Observe` with the Quill-style delta (retain / insert / delete) yjs computes in YArrayEvent / YTextEvent, and `observeDeep` with event-path bubbling up the parent chain (`Branch.DeepObservers` is allocated but never fired yet).
+- **Why deferred:** the delta computation (especially YTextEvent's formatting-aware delta) is a substantial piece; Map keys were the simplest YEvent and proved the whole pipeline (changed-key tracking, the doc-to-types `TypeEventHook` bridge, adds/deletes predicates, commit-time firing before GC).
+- **When to address:** next observer slice. Array delta first (positional add/delete via the transaction's insertion window + deletedThisTxn), then Text delta (reuse Array plus format runs), then observeDeep bubbling. Wire the result into `gomobile`'s `Listener.OnDocChanged` so mobile callers learn what changed, not just that something did.
 
 ### Map.Get value extraction handles only Any/String/Binary
 

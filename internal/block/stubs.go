@@ -93,6 +93,16 @@ type Branch struct {
 	// docs/yrs-port-notes/types-array.md finding 1 + BENCHMARKS.md
 	// B4 entry for the workload that motivated this.
 	Markers *MarkerList
+
+	// Observers / DeepObservers hold the shared-type change-event
+	// callbacks registered on this branch (yjs _eObservers / _dEH).
+	// Stored untyped (the concrete event is built in the types layer,
+	// which cannot be imported here without a cycle) and passed as
+	// `any`; the types-layer wrappers register adapters that type-
+	// assert. nil until the first observer registers. DeepObservers
+	// receive the bubbled event path as a []any of nested events.
+	Observers     []func(any)
+	DeepObservers []func([]any)
 }
 
 // Move records a move operation for movable list items. Defined when
