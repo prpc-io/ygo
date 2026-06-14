@@ -37,6 +37,7 @@ import (
 	"github.com/Deln0r/ygo/internal/encoding"
 	"github.com/Deln0r/ygo/internal/store"
 	syncpkg "github.com/Deln0r/ygo/internal/sync"
+	"github.com/Deln0r/ygo/persist"
 )
 
 // Options configures a Client. URL and DocName are required; the
@@ -73,6 +74,16 @@ type Options struct {
 	// 250ms / 10s.
 	MinBackoff time.Duration
 	MaxBackoff time.Duration
+
+	// LocalStore, when set, makes the client offline-first: on Connect
+	// the document loads its persisted state from the store (so it is
+	// usable before any network), every subsequent change (local edit
+	// or applied remote update) is persisted, and on reconnect the
+	// handshake carries any edits made while offline up to the server.
+	// Keyed by DocName. A pure-Go on-device sqlite store
+	// (persist/sqlite) is the typical mobile choice. nil disables
+	// local persistence; the document lives only in memory.
+	LocalStore persist.Store
 }
 
 // Client is a live sync session for one document. Construct with New,
@@ -94,6 +105,19 @@ type Client struct {
 
 	dirtyDoc       chan struct{}
 	dirtyAwareness chan struct{}
+
+	// closed guards Close so its teardown runs exactly once even under
+	// concurrent / repeated calls.
+	closed bool
+
+	// Offline persistence state (active only when opts.LocalStore set).
+	// lastPersisted is the state-vector watermark of what has been
+	// written to the store; the persist loop stores the diff past it on
+	// each change. persistDone closes when the persist goroutine exits.
+	dirtyPersist  chan struct{}
+	persistDone   chan struct{}
+	lastPersisted store.StateVector
+	persistCount  int
 }
 
 // New validates opts and returns an unconnected Client.
@@ -124,6 +148,7 @@ func New(opts Options) (*Client, error) {
 		awareness:      a,
 		dirtyDoc:       make(chan struct{}, 1),
 		dirtyAwareness: make(chan struct{}, 1),
+		dirtyPersist:   make(chan struct{}, 1),
 	}, nil
 }
 
@@ -156,14 +181,29 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.done = make(chan struct{})
 	c.mu.Unlock()
 
-	// Observe local transactions. Remote applies are tagged with this
-	// client as Origin and skipped, so only genuinely local edits mark
-	// the doc dirty.
+	// Offline-first: load the persisted document state BEFORE installing
+	// the observer (so the replay does not re-persist) and before the
+	// first dial (so the handshake state vector already covers any edits
+	// made while offline, sending them up to the server).
+	if c.opts.LocalStore != nil {
+		c.loadLocal(runCtx)
+	}
+
+	// Observe transactions. Every change that touches the document is
+	// persisted locally (local edits AND applied remote updates), so the
+	// on-device copy stays current. Only LOCAL edits (Origin != c) mark
+	// the doc dirty for broadcast; remote applies must not echo back.
 	c.unsubscribe = c.doc.OnAfterTransaction(func(t *doc.TransactionMut) {
-		if t.Origin == any(c) {
+		if !txnChanged(t) {
 			return
 		}
-		if !txnChanged(t) {
+		if c.opts.LocalStore != nil {
+			select {
+			case c.dirtyPersist <- struct{}{}:
+			default:
+			}
+		}
+		if t.Origin == any(c) {
 			return
 		}
 		select {
@@ -172,25 +212,43 @@ func (c *Client) Connect(ctx context.Context) error {
 		}
 	})
 
+	if c.opts.LocalStore != nil {
+		c.persistDone = make(chan struct{})
+		go c.persistLoop(runCtx)
+	}
 	go c.run(runCtx)
 	return nil
 }
 
-// Close stops the connection loop, removes the local-edit observer,
-// and closes the connection. Safe to call more than once.
+// Close stops the connection loop, removes the change observer, and
+// closes the connection. Safe to call more than once and from multiple
+// goroutines; the teardown runs exactly once.
 func (c *Client) Close() error {
 	c.mu.Lock()
+	if c.closed || c.cancel == nil {
+		c.mu.Unlock()
+		return nil
+	}
+	c.closed = true
 	cancel := c.cancel
 	done := c.done
+	persistDone := c.persistDone
+	unsubscribe := c.unsubscribe
+	c.unsubscribe = nil
 	c.mu.Unlock()
-	if cancel == nil {
-		return nil
+
+	// Remove the observer first so no late edit signals a stopped
+	// persist loop; the loop's final persistNow reads live committed
+	// state, so edits made just before Close are still captured. Then
+	// stop the loops and wait for the final flush. The waits run
+	// OUTSIDE c.mu because persistNow takes c.mu.
+	if unsubscribe != nil {
+		unsubscribe()
 	}
 	cancel()
 	<-done
-	if c.unsubscribe != nil {
-		c.unsubscribe()
-		c.unsubscribe = nil
+	if persistDone != nil {
+		<-persistDone
 	}
 	return nil
 }

@@ -420,6 +420,14 @@
 - **What:** the per-client `[]uint64` selector of `internal/awareness.Encode` cannot cross the bind boundary, so the mobile wrapper exposes only encode-all. Fine for the common "broadcast my one entry" path the Client uses, but a caller wanting to encode a specific subset cannot.
 - **When to address:** if a mobile adopter needs selective awareness encoding; add a single-ID convenience method.
 
+### client offline persistence: delete-set redundancy and disk-full durability
+
+- **Where:** `client/persist.go` (`persistNow`).
+- **What:** the offline-first local store persists `EncodeDiff(doc, watermark)` on each change, which always re-emits the FULL delete set. For a delete-heavy document each persisted blob redundantly carries every prior deletion, so the log grows faster than the new content alone. Mitigated by `Flush` compaction every 64 writes and on Close; replay is idempotent, so it never corrupts state, only bloats the log between flushes.
+- **Also:** on a `StoreUpdate` failure (e.g. disk full) mid-session the loop reports the error (via `OnError`, else a log line) and schedules one paced retry; but if the FINAL edit before shutdown fails to write and the retry also fails, that edit is absent from the local store (prior persisted state is intact, since `StoreUpdate` is atomic-on-error). This is a durability edge, not a replay-correctness bug.
+- **Why deferred:** an exact per-transaction incremental encoder (new structs + only THIS txn's deletions, not the whole delete set) would remove the redundancy; a bounded retry queue with persistent backoff would harden the disk-full edge. Both are more machinery than the current sqlite-on-device target warrants.
+- **When to address:** if a profiled mobile workload shows log growth between flushes, or if a durability-critical deployment needs guaranteed last-write persistence (then add a write-ahead acknowledgement).
+
 ### server auto-versioning assumes a single writer
 
 - **Where:** `server/versioning.go` (dirty-set sweep).

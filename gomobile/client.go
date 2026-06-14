@@ -7,6 +7,7 @@ import (
 
 	"github.com/Deln0r/ygo/client"
 	"github.com/Deln0r/ygo/internal/doc"
+	"github.com/Deln0r/ygo/persist/sqlite"
 )
 
 // errAlreadyConnected guards the one-shot Connect contract.
@@ -34,13 +35,15 @@ type Listener interface {
 // with Connect, stop with Close. The native app edits the Doc through
 // Text / Map wrappers; sync happens in the background.
 type Client struct {
-	d       *Doc
-	url     string
-	docName string
+	d         *Doc
+	url       string
+	docName   string
+	storePath string
 
 	mu          sync.Mutex
 	listener    Listener
 	inner       *client.Client
+	store       *sqlite.Store
 	cancelWatch func()
 }
 
@@ -49,6 +52,21 @@ type Client struct {
 // document on it.
 func NewClient(url, docName string, d *Doc) *Client {
 	return &Client{d: d, url: url, docName: docName}
+}
+
+// EnableOfflineStore makes the client offline-first, persisting the
+// document to a pure-Go on-device SQLite database at dbPath. On the
+// next Connect the document loads from that file (usable with no
+// network), every change is persisted, and edits made offline sync up
+// when a connection is next established. Call before Connect; a no-op
+// after. Pass the app's document path, e.g.
+// FileManager applicationSupportDirectory on iOS.
+func (c *Client) EnableOfflineStore(dbPath string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.inner == nil {
+		c.storePath = dbPath
+	}
 }
 
 // SetListener registers the event listener. Call before Connect;
@@ -80,8 +98,21 @@ func (c *Client) Connect() error {
 		opts.OnSynced = l.OnSynced
 		opts.OnError = func(err error) { l.OnError(err.Error()) }
 	}
+	if c.storePath != "" {
+		st, err := sqlite.Open(c.storePath)
+		if err != nil {
+			c.mu.Unlock()
+			return err
+		}
+		c.store = st
+		opts.LocalStore = st
+	}
 	inner, err := client.New(opts)
 	if err != nil {
+		if c.store != nil {
+			_ = c.store.Close()
+			c.store = nil
+		}
 		c.mu.Unlock()
 		return err
 	}
@@ -101,8 +132,10 @@ func (c *Client) Close() error {
 	c.mu.Lock()
 	inner := c.inner
 	cancelWatch := c.cancelWatch
+	store := c.store
 	c.inner = nil
 	c.cancelWatch = nil
+	c.store = nil
 	c.mu.Unlock()
 	if cancelWatch != nil {
 		cancelWatch()
@@ -110,7 +143,13 @@ func (c *Client) Close() error {
 	if inner == nil {
 		return nil
 	}
-	return inner.Close()
+	// Close the client first (it flushes the local store), then the
+	// store itself.
+	err := inner.Close()
+	if store != nil {
+		_ = store.Close()
+	}
+	return err
 }
 
 // Synced reports whether the last handshake completed and the

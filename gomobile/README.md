@@ -20,6 +20,22 @@ while sync runs in the background.
   `EncodeStateAsUpdate`, `EncodeDiff`) for adopters bringing their own
   transport.
 
+## Offline-first storage
+
+`Client.EnableOfflineStore(dbPath)` (call before `Connect`) persists the
+document to a pure-Go on-device SQLite file. The document loads from it
+on connect so the app is usable with no network, every change is saved,
+and edits made offline sync up when a connection is next established:
+
+```go
+c := gomobile.NewClient("wss://collab.example.com", "note", doc)
+c.EnableOfflineStore(appSupportDir + "/note.db")
+c.Connect()
+```
+
+Pass the app's document path (e.g. `applicationSupportDirectory` on iOS).
+No CGO, so the SQLite database needs no native library.
+
 ## Observing changes
 
 `Text.ObserveChanges` and `Map.ObserveChanges` deliver the exact change
