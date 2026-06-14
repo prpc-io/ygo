@@ -103,6 +103,10 @@ type Awareness struct {
 
 	mu     sync.RWMutex
 	states map[uint64]*ClientState
+	// maxClients bounds the number of distinct tracked clientIDs
+	// (live entries plus retained tombstones); 0 means unlimited.
+	// Guarded by mu. See SetMaxClients.
+	maxClients int
 
 	subMu       sync.Mutex
 	nextSubID   atomic.Uint64
@@ -131,6 +135,26 @@ func NewWithClock(clientID uint64, now func() time.Time) *Awareness {
 
 // ClientID returns the local client's identifier passed to New.
 func (a *Awareness) ClientID() uint64 { return a.clientID }
+
+// SetMaxClients bounds the number of distinct clientIDs this
+// Awareness tracks — live entries plus retained tombstones. A
+// non-positive value means unlimited (the default). When the cap is
+// reached, Apply silently drops brand-new clientIDs from incoming
+// updates; already-tracked clients keep updating, and the local
+// client is always admitted. Servers set this per room to bound the
+// memory one peer can force by flooding fabricated clientIDs.
+//
+// Lowering the cap below the current entry count evicts nothing; it
+// only refuses further additions until SweepOutdated / PurgeTombstones
+// bring the count back under the limit.
+func (a *Awareness) SetMaxClients(n int) {
+	if n < 0 {
+		n = 0
+	}
+	a.mu.Lock()
+	a.maxClients = n
+	a.mu.Unlock()
+}
 
 // LocalState returns a copy of the local client's current state
 // JSON bytes. The second return reports whether a local state is
@@ -334,6 +358,40 @@ func (a *Awareness) SweepOutdated(threshold time.Duration) []uint64 {
 	return removed
 }
 
+// PurgeTombstones permanently deletes every non-local entry that is
+// already a tombstone (Data nil) and whose LastUpdated is older than
+// (now - threshold), reclaiming the map slot. Returns the count
+// purged. Fires no events — the clients were already removed. The
+// local client is never purged.
+//
+// SweepOutdated marks silent clients offline but retains their key so
+// a stale low-clock revival cannot resurrect them; over a long-lived
+// room those tombstones accumulate without bound. PurgeTombstones is
+// the second-stage GC: once an entry has sat tombstoned past
+// threshold, a lower-clock revival is no longer a realistic concern
+// and the slot is freed. Pick a threshold comfortably larger than the
+// SweepOutdated timeout so live evictions settle before the key goes.
+func (a *Awareness) PurgeTombstones(threshold time.Duration) int {
+	cutoff := a.now().Add(-threshold)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	purged := 0
+	for id, s := range a.states {
+		if id == a.clientID {
+			continue
+		}
+		if s.Data != nil {
+			continue
+		}
+		if s.LastUpdated.Before(cutoff) {
+			delete(a.states, id)
+			purged++
+		}
+	}
+	return purged
+}
+
 // Encode produces V1 awareness wire bytes for the given clientIDs.
 // Pass nil or an empty slice to encode every known client (online
 // or removed-but-clock-retained). Unknown IDs are silently skipped.
@@ -438,6 +496,15 @@ func (a *Awareness) Apply(update []byte, origin any) (Summary, error) {
 			prev.LastUpdated = a.now()
 			updated = append(updated, e.ClientID)
 			// no change event — our content didn't change
+			continue
+		}
+
+		// Presence cap: refuse brand-new clientIDs once the tracked
+		// set (live plus tombstoned) is full. The local client is
+		// exempt. Dropping the entry rather than erroring keeps a
+		// flood of fabricated IDs from voiding legitimate entries
+		// batched alongside it.
+		if !existed && a.maxClients > 0 && e.ClientID != a.clientID && len(a.states) >= a.maxClients {
 			continue
 		}
 

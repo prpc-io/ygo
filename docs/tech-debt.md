@@ -280,12 +280,11 @@
 - **Impact today:** observers see a no-op Update event with the local clientID. Cosmetic only.
 - **When to address:** if observers do something behavioural with Updated entries (e.g. re-render UI for the local cursor). Until then, consistency with reference impl wins.
 
-### No background timeout sweep
+### Resolved: server-driven timeout sweep + presence DoS hardening
 
-- **Where:** `internal/awareness/awareness.go` — `SweepOutdated` is exposed but no goroutine drives it.
-- **What:** the y-protocols JS implementation runs an internal `setInterval` every 3 seconds. yrs leaves it to the embedder. We follow yrs.
-- **Impact today:** none — `SweepOutdated` is documented; callers wrap it in a `time.Ticker` when they need it.
-- **When to address:** never, unless ergonomics complaints arrive. Background goroutines inside passive data structures violate the "no surprise lifecycle" Go convention.
+- **Was:** `SweepOutdated` was exposed on `internal/awareness/awareness.go` but no goroutine drove it. The awareness type follows yrs (the embedder owns the lifecycle); the y-protocols JS impl runs an internal `setInterval` every `outdatedTimeout/10`. With no driver, a long-lived room accumulated stale presence entries and tombstone keys without bound, and `Apply` accepted unlimited fabricated clientIDs — both memory-exhaustion vectors against an exposed WebSocket server.
+- **Resolved by:** the awareness type stays passive (no surprise lifecycle), but the `server/` layer now drives eviction. `server/awareness_sweep.go` runs a ticker at `AwarenessTimeout/10` (floored 1s, matching the JS cadence) that, per live document, `SweepOutdated`s silent clients, broadcasts the removals, then `PurgeTombstones` (a new GC that deletes tombstone keys older than `2*timeout`, reclaiming map slots). Three new caps close the DoS vectors: `decodeUpdate` rejects an entry count above `MaxUpdateEntries` (65536) **before** the count-driven pre-allocation (the length-prefix amplification attack) and a per-entry payload above `MaxStatePayloadBytes` (64 KiB); `Awareness.SetMaxClients(n)` bounds the distinct clientIDs one room tracks (server default 4096, `Options.MaxAwarenessClients`), and `handleAwareness` re-broadcasts only the entries the cap actually accepted (re-encoded from state), so a flood neither bloats the server map nor propagates to cap-less browser peers. Lifecycle is clean: the sweep goroutine starts in `server.New` and is joined in `server.Close`.
+- **Remaining:** library callers using `internal/awareness` directly still wrap `SweepOutdated`/`PurgeTombstones` in their own ticker (by design); only the bundled server auto-drives it.
 
 ## XML types (mostly resolved)
 

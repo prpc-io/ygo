@@ -100,6 +100,24 @@ type Options struct {
 	// N versions after every capture. Zero keeps every version
 	// (history grows unbounded; prune externally).
 	KeepVersions int
+
+	// AwarenessTimeout bounds how long a silent presence entry
+	// survives before the server sweeps it: any non-local awareness
+	// client whose last update is older than this is marked offline
+	// and the removal is broadcast to the room. The sweep also
+	// garbage-collects tombstones older than twice this value,
+	// reclaiming memory from churned clients. Zero selects the
+	// y-protocols default (30s). Healthy clients heartbeat well
+	// inside the window (y-websocket every 15s), so the sweep only
+	// evicts the wedged.
+	AwarenessTimeout time.Duration
+
+	// MaxAwarenessClients bounds the distinct presence clientIDs a
+	// single room tracks, capping the memory one peer can force by
+	// flooding fabricated clientIDs. Zero selects a safe default
+	// (4096); a negative value disables the cap. New clients beyond
+	// the cap are dropped; already-tracked clients keep updating.
+	MaxAwarenessClients int
 }
 
 // Server is the http.Handler implementation. Construct with New
@@ -117,7 +135,21 @@ type Server struct {
 	versionDirty map[string]struct{}
 	versionStop  chan struct{}
 	versionDone  chan struct{}
+
+	// Awareness-sweep state (see awareness_sweep.go). The stop/done
+	// pair manages the eviction ticker goroutine's lifecycle.
+	awarenessStop chan struct{}
+	awarenessDone chan struct{}
 }
+
+// Default awareness-hardening parameters, applied to the zero value
+// of the matching Options fields. The timeout matches y-protocols'
+// outdatedTimeout; the client cap is generous for any real room while
+// bounding a flood.
+const (
+	defaultAwarenessTimeout    = 30 * time.Second
+	defaultMaxAwarenessClients = 4096
+)
 
 // New returns a Server with the given options. The returned Server
 // is ready to accept WS connections; call Handler() to obtain the
@@ -126,11 +158,18 @@ func New(opts Options) *Server {
 	if opts.DocNameFn == nil {
 		opts.DocNameFn = defaultDocName
 	}
+	if opts.AwarenessTimeout == 0 {
+		opts.AwarenessTimeout = defaultAwarenessTimeout
+	}
+	if opts.MaxAwarenessClients == 0 {
+		opts.MaxAwarenessClients = defaultMaxAwarenessClients
+	}
 	s := &Server{
 		opts: opts,
 		docs: map[string]*docState{},
 	}
 	s.startVersioning()
+	s.startAwarenessSweep()
 	return s
 }
 
@@ -152,6 +191,7 @@ func (s *Server) Handler() http.Handler {
 // leaves no leaks.
 func (s *Server) Close(ctx context.Context) error {
 	s.stopVersioning()
+	s.stopAwarenessSweep()
 	s.docsMu.Lock()
 	names := make([]string, 0, len(s.docs))
 	for name := range s.docs {
@@ -246,10 +286,12 @@ func (s *Server) acquireDoc(ctx context.Context, docName string) (*docState, err
 		d = doc.NewDoc()
 	}
 
+	aw := awareness.New(d.ClientID())
+	aw.SetMaxClients(s.opts.MaxAwarenessClients)
 	state := &docState{
 		name:      docName,
 		doc:       d,
-		awareness: awareness.New(d.ClientID()),
+		awareness: aw,
 		conns:     map[*conn]struct{}{},
 	}
 	s.docs[docName] = state
@@ -271,7 +313,7 @@ func (s *Server) releaseConn(ctx context.Context, state *docState, c *conn) {
 	if len(tombstoned) > 0 {
 		// Broadcast the resulting awareness removals to remaining
 		// peers so they learn this peer's clients departed.
-		c.broadcastAwarenessRemovals(tombstoned)
+		state.broadcastAwarenessRemovals(tombstoned)
 	}
 
 	if remaining > 0 {
@@ -372,16 +414,20 @@ func (c *conn) broadcast(envelope []byte) {
 }
 
 // broadcastAwarenessRemovals fans out tombstone envelopes for the
-// given clientIDs. Called after Disconnect when this conn departs;
-// remaining peers learn the clients are gone via a normal
-// awareness frame carrying "null" state.
-func (c *conn) broadcastAwarenessRemovals(ids []uint64) {
+// given clientIDs to every connection on the document. Called both
+// after Disconnect when a conn departs and from the periodic sweep
+// (which has no originating conn); peers learn the clients are gone
+// via a normal awareness frame carrying "null" state.
+func (s *docState) broadcastAwarenessRemovals(ids []uint64) {
+	if len(ids) == 0 {
+		return
+	}
 	// Encode the now-removed entries (the underlying ClientState
-	// retained the clock after RemoveState, so Encode emits a
-	// proper "null" sentinel for each).
-	wire := c.state.awareness.Encode(ids)
+	// retained the clock after RemoveState / SweepOutdated, so Encode
+	// emits a proper "null" sentinel for each).
+	wire := s.awareness.Encode(ids)
 	envelope := syncpkg.EncodeAwareness(wire)
-	for _, peer := range c.state.snapshotConns() {
+	for _, peer := range s.snapshotConns() {
 		_ = peer.send(envelope)
 	}
 }

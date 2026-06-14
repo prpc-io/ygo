@@ -281,10 +281,22 @@ func (c *Conn) handleAwareness(frame *Frame) error {
 	}
 	c.muClients.Unlock()
 
-	// Broadcast the awareness frame so other connections learn the
-	// new state. Including self is harmless — the receiver checks
-	// clock and drops stale/equal entries.
-	c.Broadcast(EncodeAwareness(frame.Payload))
+	// Broadcast only the entries this server actually accepted, re-
+	// encoded from current state — NOT the raw inbound payload. This
+	// is what makes the per-room client cap effective: an entry the
+	// cap dropped never enters our map, so Encode omits it and the
+	// flood does not propagate to peers (which run cap-less vanilla
+	// y-protocols). It also stops stale/duplicate entries the LWW
+	// check rejected from being relayed. An empty summary (nothing
+	// accepted) broadcasts nothing. Including self is harmless — the
+	// receiver checks clock and drops stale/equal entries.
+	accepted := make([]uint64, 0, len(summary.Added)+len(summary.Updated)+len(summary.Removed))
+	accepted = append(accepted, summary.Added...)
+	accepted = append(accepted, summary.Updated...)
+	accepted = append(accepted, summary.Removed...)
+	if len(accepted) > 0 {
+		c.Broadcast(EncodeAwareness(c.Awareness.Encode(accepted)))
+	}
 	return nil
 }
 
