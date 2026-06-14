@@ -1,14 +1,41 @@
 # gomobile binding
 
-Bytes-only subset of ygo for use with [`gomobile bind`](https://pkg.go.dev/golang.org/x/mobile/cmd/gomobile),
+App-level mobile SDK for ygo via [`gomobile bind`](https://pkg.go.dev/golang.org/x/mobile/cmd/gomobile),
 the official Go cross-compilation toolchain for iOS and Android.
 
 The main `ygo` package exposes a fully idiomatic Go API (channels,
 `any`, callbacks, generics) that `gomobile bind` cannot generate
-bindings for. This subpackage wraps the underlying types with
-bytes-in / bytes-out methods only — everything maps cleanly onto
-the JavaScript-style API surface that Objective-C / Java consumers
-can call.
+bindings for. This subpackage wraps those types with a bind-safe
+surface so an iOS / Android app can edit a document and render UI
+while sync runs in the background.
+
+## API levels
+
+- **App level** — editable `Text` (`InsertAt` / `DeleteAt` / `String`,
+  UTF-16 indices) and `Map` (string keys/values), `UndoManager`,
+  cursor anchors (`Text.EncodeCursor` / `ResolveCursor`), and a sync
+  `Client` (`NewClient` / `Connect` / `Listener`) that connects to a
+  yserve / Hocuspocus / y-websocket server.
+- **Wire level** — bytes-in / bytes-out (`ApplyUpdate`,
+  `EncodeStateAsUpdate`, `EncodeDiff`) for adopters bringing their own
+  transport.
+
+## Observing changes
+
+`Text.ObserveChanges` and `Map.ObserveChanges` deliver the exact change
+of each transaction as a **Quill-style delta in JSON** — the shape a
+native editor (or Quill / ProseMirror) applies directly, so the UI
+updates only what changed instead of re-rendering the whole document:
+
+```go
+text := doc.Text("note")
+text.ObserveChanges(listener) // listener.OnTextChange([]byte)
+// delivers e.g. [{"retain":3},{"insert":"hi","attributes":{"bold":true}}]
+```
+
+Implement `TextChangeListener` / `MapChangeListener` in Swift or Kotlin.
+Callbacks run on a background goroutine while the document lock is held;
+dispatch to the main thread before touching UI.
 
 ## Verified iOS xcframework build
 

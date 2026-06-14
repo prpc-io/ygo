@@ -19,6 +19,7 @@ Ygo speaks the **Yjs V1 and V2 wire formats byte-for-byte**. JavaScript clients 
 - **Pure Go, no CGO — mobile included.** Builds for any Go target, compiles to WASM, and cross-compiles freely. `gomobile bind` produces an iOS xcframework and Android AAR (manually verified on 2026-06-12, not run in CI) carrying a full mobile SDK: editable Text / Map, undo, cursors, and a built-in background sync client (WebSocket + reconnect), so a Swift / Kotlin app only renders UI. No V8, no embedded JavaScript engine, no Rust FFI bridge.
 - **Embeddable sync client.** The [`client`](client) package is a Go-native y-websocket/Hocuspocus provider: handshake, incremental updates, awareness, offline edits, reconnect with backoff. The building block for bots, CLI tools, and server-side agents.
 - **Complete CRDT type set.** Map, Array, Text (rich-text formatting, Quill deltas, embeds), XML types, Awareness, UndoManager, Snapshots / time-travel, and Subdocuments.
+- **Change observers.** `Map.Observe` / `Array.Observe` / `Text.Observe` deliver Quill-style deltas of exactly what changed; `ObserveDeep` bubbles events from nested types with their path. Semantic parity with yjs's YMapEvent / YArrayEvent / YTextEvent. On mobile, `ObserveChanges` hands a native editor the delta as JSON.
 - **Compact encoding.** Commit-time block squash collapses per-character edits into single items (about 1 byte per character in V1), and garbage collection frees deleted content at commit. On a real-world editing trace V1 document size drops from ~1.97 MB to ~223 KB, competitive with V2.
 - **Forward-looking wire handling.** ygo already handles both confirmed wire-level changes in the `yjs@14` release candidate: 53-bit client IDs throughout (byte-verified above 2^32) and Skip structs in the update stream (decoded as no-op gaps). Full attribution / IdMap support waits for the v14 format to stabilize.
 - **Ready-to-run server: [yserve](docs/yserve.md).** A self-hosted Yjs server in a single static binary — a Hocuspocus alternative with no Node, no Redis, no CGO. Same wire protocol, so existing `@hocuspocus/provider` / `y-websocket` clients connect unchanged; SQLite persistence and periodic document versioning built in. Also embeds as a plain `http.Handler` inside an existing Go backend.
@@ -130,6 +131,24 @@ got, ok := m.GetDoc(d, "child") // got.GUID() == sub.GUID()
 
 The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.31`, verified by cross-language fixtures. Lifecycle events are observable via `d.OnSubdocs` (added / removed / loaded GUIDs per transaction); `SetDocWithOptions(..., autoLoad)` and `subdoc.Load()` drive the loaded set, so a sync provider knows which nested documents to fetch.
 
+### Observing changes
+
+Subscribe to a shared type to learn exactly what changed in each transaction, local or remote:
+
+```go
+m := ygo.NewMap(d, "settings")
+unsub := m.Observe(func(e *ygo.MapEvent) {
+    for key, change := range e.Keys {
+        // change.Action is "add" / "update" / "delete"; change.OldValue
+        // holds the prior value for update / delete.
+        fmt.Printf("%s %s\n", change.Action, key)
+    }
+})
+defer unsub()
+```
+
+`Array.Observe` and `Text.Observe` deliver a Quill-style delta (`{Insert, Delete, Retain}` ops; Text ops carry formatting attributes). `Map.ObserveDeep` / `Array.ObserveDeep` fire for changes to nested types too, with each event's `Path` from the observed type to the change. The event semantics match `yjs`'s YMapEvent / YArrayEvent / YTextEvent, cross-checked against captured reference output.
+
 ## Status
 
 **Feature-complete and stable.** The CRDT engine, the V1 and V2 wire formats, and the full type set above are validated bidirectionally against `yjs@13.6.31` and exercised in CI on every push. The public API is considered stable for the v1.x line; changes follow semantic versioning, with new functionality as minor releases and breaking changes deferred to a future major.
@@ -163,6 +182,7 @@ The `ContentDoc` wire format (GUID + options) is byte-compatible with `yjs@13.6.
 | GC merging | done; deleted content is freed at commit (ContentDeleted, byte-aligned with yjs) and adjacent deleted runs are merged. Deleting a nested shared type recursively collapses its whole subtree into garbage-collected runs (cross-language fixtures), matching yjs. Skipped when GC is disabled or for items an UndoManager keeps |
 | Relative positions (cursors) | done; `CreateRelativePositionFromTypeIndex` / `CreateAbsolutePositionFromRelativePosition`, binary form byte-compatible with `Y.encodeRelativePosition`, follows undone deletions; cross-language fixtures incl. surrogate pairs and 53-bit client IDs |
 | Versioned persistence | done; named point-in-time versions independent of the live log (`persist.VersionStore`: save / list / load / restore / prune), atomic restore, sqlite reference implementation |
+| Change observers | done; `Map.Observe` (YMapEvent: add / update / delete + oldValue), `Array.Observe` and `Text.Observe` (Quill-style insert / delete / retain delta, Text formatting-aware), `Map`/`Array.ObserveDeep` (event-path bubbling from nested types). Deltas cross-checked against captured `yjs@13.6.31` output; fire on local and remote transactions. gomobile `Text`/`Map.ObserveChanges` deliver the delta as Quill JSON |
 
 ## Goals
 
