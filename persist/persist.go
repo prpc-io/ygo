@@ -76,10 +76,13 @@ type Store interface {
 }
 
 // ErrEmptyUpdate is returned by StoreUpdate when called with a
-// zero-length update blob. Empty updates are rejected because they
-// signal a caller bug: a valid V1 update always carries at least the
-// client-count varuint (one byte for zero) plus the empty-delete-set
-// terminator (one byte). Zero bytes can never be a valid update.
+// zero-length update blob. A zero-length slice is the one
+// unambiguous caller bug the persist layer rejects: it can never be
+// a meaningful update, since the smallest valid V1 update is the
+// two-byte empty update (a zero client-count varuint followed by the
+// empty-delete-set terminator). The layer does not otherwise inspect
+// blob structure — validating the encoding is the encoder's job — so
+// that two-byte empty update is itself accepted and stored verbatim.
 var ErrEmptyUpdate = errors.New("persist: update blob is empty")
 
 // LoadDoc reconstructs a Doc by replaying every stored update for
