@@ -14,8 +14,9 @@ import (
 // NSString / Java String length semantics, which is what makes the
 // mobile bridge clean).
 type Text struct {
-	d     *Doc
-	inner *types.Text
+	d         *Doc
+	inner     *types.Text
+	unobserve func()
 }
 
 // Text returns the shared text registered under name, creating the
@@ -97,8 +98,9 @@ func (t *Text) ResolveCursor(encoded []byte) int {
 // without an `any` in sight). Other value kinds written by JS peers
 // read back as empty strings; use the bytes-level Doc API for those.
 type Map struct {
-	d     *Doc
-	inner *types.Map
+	d         *Doc
+	inner     *types.Map
+	unobserve func()
 }
 
 // Map returns the shared map registered under name, creating the

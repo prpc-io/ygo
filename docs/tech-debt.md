@@ -58,12 +58,11 @@
 
 ## Types layer (Map and beyond)
 
-### Observer subsystem: Array / Text deltas and observeDeep not yet implemented
+### Observer subsystem: XML-type events not yet wired
 
 - **Where:** `internal/types/event.go`.
-- **What:** `Map.Observe` is shipped (YMapEvent parity with yjs: add / update / delete actions, oldValue, empty-event-on-net-no-op, fires on local and remote transactions). Still missing: `Array.Observe` / `Text.Observe` with the Quill-style delta (retain / insert / delete) yjs computes in YArrayEvent / YTextEvent, and `observeDeep` with event-path bubbling up the parent chain (`Branch.DeepObservers` is allocated but never fired yet).
-- **Why deferred:** the delta computation (especially YTextEvent's formatting-aware delta) is a substantial piece; Map keys were the simplest YEvent and proved the whole pipeline (changed-key tracking, the doc-to-types `TypeEventHook` bridge, adds/deletes predicates, commit-time firing before GC).
-- **When to address:** next observer slice. Array delta first (positional add/delete via the transaction's insertion window + deletedThisTxn), then Text delta (reuse Array plus format runs), then observeDeep bubbling. Wire the result into `gomobile`'s `Listener.OnDocChanged` so mobile callers learn what changed, not just that something did.
+- **What:** `Map.Observe`, `Array.Observe`, `Text.Observe`, and `Map`/`Array.ObserveDeep` are shipped with full YMapEvent / YArrayEvent / YTextEvent parity (cross-checked against captured yjs@13.6.31 output: map add/update/delete + oldValue; array insert/delete/retain with trailing-retain trim; text formatting-aware delta with attribute runs; observeDeep path bubbling with map-key and array-index segments). Events fire on local and remote transactions. gomobile exposes `Text.ObserveChanges` / `Map.ObserveChanges` delivering Quill-style JSON. Still missing: dedicated XmlElement / XmlText events (they are positional branches and currently route to the Array/Text dispatch by TypeRef, which is approximately right but has no XML-specific event shape or test), and `Text.ObserveDeep` (only Map/Array expose ObserveDeep; text rarely nests types).
+- **When to address:** when an XML-tree adopter needs change events, add an XmlEvent shape; add `Text.ObserveDeep` if a nesting use case appears.
 
 ### Map.Get value extraction handles only Any/String/Binary
 

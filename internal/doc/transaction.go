@@ -152,6 +152,18 @@ func (t *TransactionMut) Commit() {
 	// captured in WriteTxn, this is the data UndoManager needs to
 	// compute per-transaction insertion ranges.
 	t.afterState = t.doc.store.GetStateVector()
+	// Dispatch shared-type observe / observeDeep events FIRST, before
+	// any commit-time mutation rewrites the item layout. This mirrors
+	// yjs, which computes type-event deltas during cleanup before
+	// merging structs: squash would merge a new item into its
+	// pre-existing left neighbour (e.g. appending "!" onto "hello"),
+	// after which the merged item's clock predates beforeState and the
+	// added text reads as a retain, losing the insert. Running here,
+	// the items are still un-squashed and un-GC'd, so adds()/deletes()
+	// and a delete's oldValue content are all correct.
+	if TypeEventHook != nil {
+		TypeEventHook(t)
+	}
 	// Commit-time block squash: merge same-client adjacent-clock items
 	// created this transaction into their predecessors. Clocks are
 	// preserved, so afterState (captured above) stays valid.
@@ -166,12 +178,6 @@ func (t *TransactionMut) Commit() {
 	// keep, which the GC pass below must see, so observers run BEFORE
 	// gcDeleted.
 	t.doc.fireAfterTransactionHandlers(t)
-	// Dispatch shared-type observe / observeDeep events. Runs BEFORE
-	// gcDeleted so a delete event can still read the tombstoned item's
-	// content for its oldValue (GC replaces it with a bare marker).
-	if TypeEventHook != nil {
-		TypeEventHook(t)
-	}
 	// Garbage-collect deleted content (free payloads, merge deleted
 	// runs), skipping items marked keep by an observer.
 	t.gcDeleted()

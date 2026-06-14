@@ -25,8 +25,15 @@ type Text struct {
 	branch *block.Branch
 }
 
-// NewText wraps the given branch as a Text.
+// NewText wraps the given branch as a Text. It tags the branch as a
+// Text type (TypeRefText) so the observer dispatcher can tell a root
+// Text from a root Array, whose branches both default to TypeRef zero
+// otherwise. The root TypeRef is never serialized (roots are written
+// by name), so this does not affect the wire format.
 func NewText(branch *block.Branch) *Text {
+	if branch != nil {
+		branch.TypeRef = block.TypeRefText
+	}
 	return &Text{branch: branch}
 }
 

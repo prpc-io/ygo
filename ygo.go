@@ -167,6 +167,20 @@ type MapEvent = types.MapEvent
 // "add").
 type KeyChange = types.KeyChange
 
+// ArrayEvent is delivered to Array observers (Array.Observe) after a
+// transaction that changed the array. Delta is the Quill-style change
+// description. Semantic parity with yjs YArrayEvent.
+type ArrayEvent = types.ArrayEvent
+
+// ArrayDeltaOp is one op of an array change delta: exactly one of
+// Insert (values), Delete (count), or Retain (count) is set.
+type ArrayDeltaOp = types.ArrayDeltaOp
+
+// TextEvent is delivered to Text observers (Text.Observe) after a
+// transaction that changed the text. Delta is the formatting-aware
+// Quill-style change description. Semantic parity with yjs YTextEvent.
+type TextEvent = types.TextEvent
+
 // UndoScope is anything an UndoManager can watch. Every shared-type
 // wrapper (Map, Array, Text, XmlFragment, XmlElement, XmlText)
 // satisfies it via its Branch method.
