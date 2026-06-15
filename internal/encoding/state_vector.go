@@ -48,6 +48,9 @@ func DecodeStateVector(buf []byte) (store.StateVector, []byte, error) {
 		return nil, buf, err
 	}
 	buf = buf[n:]
+	if err := checkDecodeCount(count, len(buf)); err != nil {
+		return nil, buf, err
+	}
 
 	sv := make(store.StateVector, count)
 	for i := uint64(0); i < count; i++ {

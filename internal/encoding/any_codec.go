@@ -203,6 +203,9 @@ func DecodeAny(buf []byte) (any, []byte, error) {
 			return nil, buf, err
 		}
 		buf = buf[n:]
+		if err := checkDecodeCount(count, len(buf)); err != nil {
+			return nil, buf, err
+		}
 		arr := make([]any, count)
 		for i := uint64(0); i < count; i++ {
 			el, tail, err := DecodeAny(buf)
@@ -219,6 +222,9 @@ func DecodeAny(buf []byte) (any, []byte, error) {
 			return nil, buf, err
 		}
 		buf = buf[n:]
+		if err := checkDecodeCount(count, len(buf)); err != nil {
+			return nil, buf, err
+		}
 		m := make(map[string]any, count)
 		for i := uint64(0); i < count; i++ {
 			key, kn, err := lib0.ReadVarString(buf)

@@ -165,6 +165,9 @@ func DecodeIdSet(buf []byte) (*IdSet, []byte, error) {
 		return nil, buf, err
 	}
 	buf = buf[n:]
+	if err := checkDecodeCount(clientCount, len(buf)); err != nil {
+		return nil, buf, err
+	}
 
 	s := NewIdSet()
 	for i := uint64(0); i < clientCount; i++ {
@@ -180,6 +183,9 @@ func DecodeIdSet(buf []byte) (*IdSet, []byte, error) {
 		}
 		buf = buf[n:]
 
+		if err := checkDecodeCount(rangeCount, len(buf)); err != nil {
+			return nil, buf, err
+		}
 		ranges := make([]Range, rangeCount)
 		for j := uint64(0); j < rangeCount; j++ {
 			start, n, err := lib0.ReadVarUint(buf)

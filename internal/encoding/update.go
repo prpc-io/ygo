@@ -261,12 +261,30 @@ func buildDeleteSetFromStore(bs *store.BlockStore, sv store.StateVector) *IdSet 
 // Repair fills those at apply time.
 //
 // Mirrors yrs Update::decode (update.rs:497-516).
+// checkDecodeCount guards a wire-supplied element count against the
+// bytes still available to decode it. Every V1/V2 element consumes at
+// least one input byte, so a count larger than the remaining input
+// cannot come from a valid encoder; it is the length-prefix
+// amplification DoS, where a handful of bytes name a huge count and
+// force an unbounded make()/decode loop (a fuzzer turned a 9-byte
+// update into a multi-terabyte allocation here). Reject it as the
+// truncated input it effectively is.
+func checkDecodeCount(count uint64, remaining int) error {
+	if remaining < 0 || count > uint64(remaining) {
+		return lib0.ErrTruncated
+	}
+	return nil
+}
+
 func DecodeUpdate(buf []byte) (*Update, []byte, error) {
 	clientCount, n, err := lib0.ReadVarUint(buf)
 	if err != nil {
 		return nil, buf, err
 	}
 	buf = buf[n:]
+	if err := checkDecodeCount(clientCount, len(buf)); err != nil {
+		return nil, buf, err
+	}
 
 	u := NewUpdate()
 	for i := uint64(0); i < clientCount; i++ {
@@ -286,6 +304,9 @@ func DecodeUpdate(buf []byte) (*Update, []byte, error) {
 		}
 		buf = buf[n:]
 
+		if err := checkDecodeCount(blockCount, len(buf)); err != nil {
+			return nil, buf, err
+		}
 		blocks := make([]Block, 0, blockCount)
 		for j := uint64(0); j < blockCount; j++ {
 			b, tail, err := decodeBlock(buf, block.ID{Client: client, Clock: clock})

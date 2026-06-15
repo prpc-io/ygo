@@ -294,6 +294,14 @@
 - **Resolved by:** `internal/types/xml.go` ships `XmlFragment`, `XmlElement`, `XmlText` wrappers. XmlElement carries nodeName + attributes (Map-like via `branch.Map`) + positional children (Array-like via `branch.Start`); XmlText embeds the regular Text wrapper to inherit all rich-text methods. ToString renderers produce HTML-like output with sorted attribute keys. 11 tests cover Element/Attribute/RemoveAttribute, nested DOM round-trip, self-closing render for empty elements, rich-text inside XmlText, wire round-trip preserves structure, cross-client structural-edit convergence, Range over children. The wire-format machinery (`ContentType` with optional nodeName) was already in place from the nested-type commit.
 - **Remaining:** `XmlHook` (legacy JS Yjs embed type carrying an arbitrary opaque value) is deferred — yrs marks it as legacy too. No adopter has asked.
 
+## Encoding layer
+
+### Resolved: unbounded decode allocation (length-prefix amplification DoS)
+
+- **Was:** the V1/V2 update, snapshot, id-set, state-vector, and Any-content decoders pre-sized slices/maps from a wire-supplied element count (`make([]Block, 0, blockCount)`, `make([]Range, rangeCount)`, `make([]block.Any, count)`, `make(map[string]any, count)`) with no bound. A fuzz harness turned a 9-byte update into a multi-terabyte `make()` — a memory-exhaustion DoS reachable from any peer over the sync wire, since `ApplyUpdate` is the integration entry for untrusted remote changes.
+- **Resolved by:** a shared `checkDecodeCount(count, remaining)` guard (`internal/encoding/update.go`) rejects any count exceeding the input bytes available to decode it — every element consumes >= 1 byte, so the bound never rejects a valid encoding (verified: cross-language fixtures pass, and a 3000-block/12 KB update is accepted). Applied at all nine count-driven sites across `update.go`, `update_v2.go` (incl. `DecodeContentV2` and `readDeleteSetV2`), `idset.go`, `state_vector.go`, `any_codec.go`, `content_codec.go`. Found by the new fuzz suite (`*_test.go` `FuzzDecodeUpdate` / `FuzzApplyUpdate` / `FuzzDecodeUpdateV2` / `FuzzDecodeSnapshot` + awareness / sync / relpos targets); crashers are committed as regression corpus under `testdata/fuzz/`, and `.github/workflows/fuzz.yml` fuzzes the decode paths nightly.
+- **Remaining:** the V2 block loop can still iterate up to O(input length) on drained column streams (bounded, not amplified) because the RLE column readers return zero values rather than erroring on drain; making them error on drain is a deeper change deferred as low-priority (the count bound already removes the DoS).
+
 ## Persistence layer
 
 ### GetStateVector replays the full update log every call

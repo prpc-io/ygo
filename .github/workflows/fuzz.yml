@@ -1,0 +1,67 @@
+name: fuzz
+
+# Continuous fuzzing of the untrusted-input decode paths (update apply,
+# awareness presence, sync frames, lib0 primitives). The committed seed
+# corpus already runs as regression tests in the main `test` job; this
+# job does NEW exploration: a long nightly burst plus a short smoke
+# burst on any change to a decode path, so a regression fails fast.
+on:
+  schedule:
+    - cron: "0 6 * * *" # daily 06:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - "internal/lib0/**"
+      - "internal/encoding/**"
+      - "internal/awareness/**"
+      - "internal/sync/**"
+      - "internal/block/**"
+      - ".github/workflows/fuzz.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "internal/lib0/**"
+      - "internal/encoding/**"
+      - "internal/awareness/**"
+      - "internal/sync/**"
+      - "internal/block/**"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    name: fuzz
+    runs-on: ubuntu-latest
+    env:
+      # Long continuous run on the nightly schedule; a quick burst on
+      # push / PR. go test fuzzes ONE target per invocation, so we
+      # discover every FuzzXxx and run them in turn.
+      FUZZTIME: ${{ github.event_name == 'schedule' && '180s' || '40s' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.24"
+      - name: go mod download
+        run: go mod download
+      - name: fuzz every target
+        run: |
+          set -uo pipefail
+          status=0
+          while IFS= read -r f; do
+            dir=$(dirname "$f")
+            while IFS= read -r fn; do
+              echo "::group::fuzz ${dir} ${fn} (${FUZZTIME})"
+              if ! go test -run='^$' -fuzz="^${fn}$" -fuzztime="${FUZZTIME}" "./${dir#./}"; then
+                status=1
+              fi
+              echo "::endgroup::"
+            done < <(grep -oE '^func (Fuzz[A-Za-z0-9_]+)' "$f" | awk '{print $2}')
+          done < <(grep -rl '^func Fuzz' --include='*_test.go' .)
+          exit $status
+      - name: upload crashers
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-crashers
+          path: "**/testdata/fuzz/**"
+          if-no-files-found: ignore

@@ -133,6 +133,9 @@ func DecodeContent(buf []byte, refNum uint8) (block.Content, []byte, error) {
 			return block.Content{}, buf, err
 		}
 		buf = buf[n:]
+		if err := checkDecodeCount(count, len(buf)); err != nil {
+			return block.Content{}, buf, err
+		}
 		anys := make([]block.Any, count)
 		for i := uint64(0); i < count; i++ {
 			v, tail, err := DecodeAny(buf)

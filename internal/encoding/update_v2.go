@@ -272,6 +272,14 @@ func writeDeleteSetV2(enc *EncoderV2, ds *IdSet) {
 // Repair fills those at apply time. Mirrors DecodeUpdate (V1) but
 // pulls per-field bytes from the column decoders.
 func DecodeUpdateV2(buf []byte) (*Update, error) {
+	// Block/client data is pulled from the V2 column streams, which are
+	// all slices of buf, so the total input length is a valid upper
+	// bound on any element count (each element consumes >= 1 byte from
+	// some column). Without it, a wire-supplied count drove an
+	// unbounded make()/decode loop on drained columns — a fuzzer
+	// OOM-killed the process from a 69-byte input.
+	total := len(buf)
+
 	dec, err := NewDecoderV2(buf)
 	if err != nil {
 		return nil, fmt.Errorf("DecodeUpdateV2 header: %w", err)
@@ -281,11 +289,17 @@ func DecodeUpdateV2(buf []byte) (*Update, error) {
 	if err != nil {
 		return nil, fmt.Errorf("DecodeUpdateV2 client count: %w", err)
 	}
+	if err := checkDecodeCount(clientCount, total); err != nil {
+		return nil, fmt.Errorf("DecodeUpdateV2 client count: %w", err)
+	}
 
 	u := NewUpdate()
 	for i := uint64(0); i < clientCount; i++ {
 		blockCount, err := dec.ReadVarUint()
 		if err != nil {
+			return nil, fmt.Errorf("DecodeUpdateV2 block count: %w", err)
+		}
+		if err := checkDecodeCount(blockCount, total); err != nil {
 			return nil, fmt.Errorf("DecodeUpdateV2 block count: %w", err)
 		}
 		client, err := dec.ReadClient()
@@ -417,6 +431,11 @@ func DecodeContentV2(dec *DecoderV2, refNum uint8) (block.Content, error) {
 		if err != nil {
 			return block.Content{}, fmt.Errorf("DecodeContentV2 any count: %w", err)
 		}
+		// Elements come from the rest stream, so it bounds the count;
+		// without this a wire count forces an unbounded make().
+		if err := checkDecodeCount(count, len(dec.ReadRestBytes())); err != nil {
+			return block.Content{}, fmt.Errorf("DecodeContentV2 any count: %w", err)
+		}
 		anys := make([]block.Any, count)
 		for i := uint64(0); i < count; i++ {
 			v, err := dec.ReadAny()
@@ -489,6 +508,11 @@ func readDeleteSetV2(dec *DecoderV2) (*IdSet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("readDeleteSetV2 client count: %w", err)
 	}
+	// All delete-set counts and range pairs come from the rest stream,
+	// so it bounds them — same guard as the V1 DecodeIdSet twin.
+	if err := checkDecodeCount(clientCount, len(dec.ReadRestBytes())); err != nil {
+		return nil, fmt.Errorf("readDeleteSetV2 client count: %w", err)
+	}
 	for i := uint64(0); i < clientCount; i++ {
 		c, err := dec.ReadVarUint()
 		if err != nil {
@@ -496,6 +520,9 @@ func readDeleteSetV2(dec *DecoderV2) (*IdSet, error) {
 		}
 		rangeCount, err := dec.ReadVarUint()
 		if err != nil {
+			return nil, fmt.Errorf("readDeleteSetV2 range count: %w", err)
+		}
+		if err := checkDecodeCount(rangeCount, len(dec.ReadRestBytes())); err != nil {
 			return nil, fmt.Errorf("readDeleteSetV2 range count: %w", err)
 		}
 		var dsCurr uint64
